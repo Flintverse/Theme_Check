@@ -8,6 +8,7 @@ const { render } = require('../report/html');
 const { buildSummary } = require('./summary');
 const { updateTracker, emptyTracker } = require('./tracker');
 const { archiveRoot, runsDir, dataDir } = require('./paths');
+const ovr = require('./overrides');
 
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return d; } };
 const writeJson = (f, o) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o, null, 2)); };
@@ -23,9 +24,11 @@ function walk(dir, out) {
 // Pictures of passing checks are not worth keeping: drop them so a weekly run stays small.
 function pruneEvidence(runDir, run) {
   const keep = new Set();
+  const verdicts = ovr.readOverrides(runDir).items; // a check a person marked fail or review keeps its picture too
   (run.themes || []).forEach((t) => (t.passes || []).forEach((p) => {
     p.results.forEach((r) => {
-      if (r.status === 'fail' || r.status === 'error' || r.status === 'review') (r.shots || []).forEach((s) => keep.add(path.normalize(path.join(runDir, s))));
+      const v = verdicts[ovr.keyFor(t.name, p.layout, p.viewport, r.id)];
+      if (r.status === 'fail' || r.status === 'error' || r.status === 'review' || (v && (v.status === 'fail' || v.status === 'review'))) (r.shots || []).forEach((s) => keep.add(path.normalize(path.join(runDir, s))));
       else r.shots = [];
     });
   }));
@@ -50,14 +53,15 @@ function finalizeRun({ root, cfg, run, checklist, trackIssues }) {
   const runDir = path.join(dir, run.runId);
   const out = { removedEvidence: pruneEvidence(runDir, run) };
   const prev = findPrevious(dir, run.env, run.runId);
-  writeJson(path.join(runDir, 'results.json'), run);
-  fs.writeFileSync(path.join(runDir, 'report.html'), render(run, checklist, prev));
-  const summary = buildSummary(run, checklist, prev);
+  writeJson(path.join(runDir, 'results.json'), run); // the script's own results, untouched
+  const eff = ovr.applyOverrides(run, ovr.readOverrides(runDir)); // with the manual verdicts on top
+  fs.writeFileSync(path.join(runDir, 'report.html'), render(eff, checklist, prev));
+  const summary = buildSummary(eff, checklist, prev);
   writeJson(path.join(runDir, 'summary.json'), summary);
 
   const data = dataDir(root, cfg);
   if (trackIssues) {
-    const tracker = updateTracker(readJson(path.join(data, 'issues.json'), emptyTracker()), run, flatten(run), checklist);
+    const tracker = updateTracker(readJson(path.join(data, 'issues.json'), emptyTracker()), eff, flatten(eff), checklist);
     writeJson(path.join(data, 'issues.json'), tracker);
   }
   const index = readJson(path.join(data, 'runs.json'), []).filter((r) => r.runId !== run.runId);
@@ -70,4 +74,46 @@ function finalizeRun({ root, cfg, run, checklist, trackIssues }) {
   return out;
 }
 
-module.exports = { finalizeRun, pruneEvidence, gitPublish };
+// A manual verdict was added or removed on a finished run: write the report, the summary, the run index and the issue
+// tracker again from the script's results plus the verdicts. Safe to repeat.
+function refreshRun({ root, cfg, runId, checklist }) {
+  const dir = runsDir(root, cfg);
+  const runDir = path.join(dir, runId);
+  const run = readJson(path.join(runDir, 'results.json'), null);
+  if (!run) return { ok: false, reason: 'no results.json for ' + runId };
+  const prev = findPrevious(dir, run.env, runId);
+  const eff = ovr.applyOverrides(run, ovr.readOverrides(runDir));
+  fs.writeFileSync(path.join(runDir, 'report.html'), render(eff, checklist, prev));
+  const summary = buildSummary(eff, checklist, prev);
+  writeJson(path.join(runDir, 'summary.json'), summary);
+  const data = dataDir(root, cfg);
+  const idxFile = path.join(data, 'runs.json');
+  const index = readJson(idxFile, []);
+  const known = index.some((r) => r.runId === runId);
+  if (known) { // a run that is still going is not in the index yet: its report is rewritten, nothing else
+    writeJson(idxFile, index.map((r) => (r.runId === runId ? summary : r)));
+    rebuildTracker({ root, cfg, checklist, index });
+  }
+  return { ok: true, finalized: known, summary };
+}
+
+// The issue tracker from every finished run, oldest first, with the manual verdicts applied. Skipped when a finished run's
+// files are gone (the tracker then stays as it was rather than forgetting that history).
+function rebuildTracker({ root, cfg, checklist, index }) {
+  const dir = runsDir(root, cfg);
+  const runs = [];
+  for (const s of index) {
+    const rd = path.join(dir, s.runId);
+    const r = readJson(path.join(rd, 'results.json'), null);
+    if (!r) return { ok: false, reason: 'results of ' + s.runId + ' are missing' };
+    if (r.env === 'url') continue; // ad-hoc URL runs are not tracked
+    runs.push(ovr.applyOverrides(r, ovr.readOverrides(rd)));
+  }
+  runs.sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
+  let tracker = emptyTracker();
+  runs.forEach((r) => { tracker = updateTracker(tracker, r, flatten(r), checklist); });
+  writeJson(path.join(dataDir(root, cfg), 'issues.json'), tracker);
+  return { ok: true, runs: runs.length };
+}
+
+module.exports = { finalizeRun, refreshRun, rebuildTracker, pruneEvidence, gitPublish };

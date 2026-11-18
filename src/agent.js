@@ -67,6 +67,38 @@ async function checkOnce(root, cfg, opts) {
   return { changed: true, steps };
 }
 
+// Manual verdicts (skip / pass / review / fail) set on the web page are kept in R2; the ones set in the local dashboard are
+// on this machine. For the newest runs, the higher rev wins: a newer web copy is written here and the reports, the numbers
+// and the issue tracker are recalculated; a newer local copy is sent up. Returns how many runs changed.
+async function syncOverrides(root, cfg, opts) {
+  const o = Object.assign({ fetchImpl: null, refresh: require('./store/archive').refreshRun, pushState: null }, opts);
+  ensureToken();
+  const monitor = sync.syncConfig(cfg);
+  if (!monitor || monitor.error) return { changed: 0 };
+  const ovr = require('./store/overrides');
+  const { runsDir, dataDir } = require('./store/paths');
+  const dir = runsDir(root, cfg);
+  const ids = new Set();
+  try { const p = require('./store/progress').readProgress(dataDir(root, cfg)); if (p && p.runId) ids.add(p.runId); } catch (e) { /* no progress */ }
+  try { fs.readdirSync(dir).filter((d) => fs.existsSync(path.join(dir, d, 'results.json'))).sort().slice(-3).forEach((d) => ids.add(d)); } catch (e) { /* no runs */ }
+  let changed = 0;
+  for (const runId of ids) {
+    const runDir = path.join(dir, runId);
+    if (!fs.existsSync(path.join(runDir, 'results.json'))) continue;
+    const local = ovr.readOverrides(runDir);
+    const remote = await getJson(monitor, 'overrides?run=' + encodeURIComponent(runId), o.fetchImpl);
+    const rr = Number(remote.rev) || 0;
+    if (rr === local.rev) continue;
+    if (rr > local.rev) ovr.writeOverrides(runDir, { rev: rr, items: remote.items || {} });
+    o.refresh({ root, cfg, runId, checklist: cfgLib.loadChecklist(root) });
+    const files = ['overrides.json', 'report.html', 'summary.json'].map((f) => path.join(runDir, f)).filter((f) => fs.existsSync(f));
+    await sync.pushRunFiles(monitor, runDir, runId, { files, fetchImpl: o.fetchImpl });
+    await (o.pushState ? o.pushState() : sync.pushState(monitor, require('./publish').buildState(root, cfg, { remote: true }), o.fetchImpl));
+    changed++;
+  }
+  return { changed };
+}
+
 // Keeps checking, forever. The Windows task "Theme check agent" starts this at logon.
 async function runAgent(root, cfg, log) {
   ensureToken();
@@ -80,10 +112,14 @@ async function runAgent(root, cfg, log) {
   fs.writeFileSync(lock, String(process.pid));
   const monitor = require('./monitor');
   say('Agent started: checking Cloudflare for saved changes every minute');
-  let last = 0;
+  let last = 0, lastOv = 0;
   await monitor.watch(root, cfg, {
     everyMs: 15000,
     extraTick: async () => {
+      if (Date.now() - lastOv >= 30000) {
+        lastOv = Date.now();
+        try { const r = await syncOverrides(root, cfg); if (r.changed) say('Manual verdicts synced for ' + r.changed + ' run(s); reports and numbers recalculated'); } catch (e) { say('Verdict sync failed: ' + e.message); }
+      }
       if (Date.now() - last < 60000) return;
       last = Date.now();
       try {
@@ -128,4 +164,4 @@ function uninstallAgent() {
   return { ok: true, message: 'Removed from startup. A running agent stops at the next logoff (or end its node process).' };
 }
 
-module.exports = { checkOnce, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };
+module.exports = { checkOnce, syncOverrides, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };

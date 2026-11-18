@@ -11,7 +11,7 @@ function flatten(run) {
       rows.push({ theme: t.name, layout: 'setup', id: 'SETUP', status: 'fail', detail: `${t.setupFailed.reason || 'setup failed'}: ${t.setupFailed.detail || ''}`.trim(), shots: [] });
       return;
     }
-    (t.passes || []).forEach((p) => p.results.forEach((r) => rows.push({ theme: t.name, layout: r.layout, viewport: p.viewport, id: r.id, status: r.status, detail: r.detail, shots: r.shots || [] })));
+    (t.passes || []).forEach((p) => p.results.forEach((r) => rows.push({ theme: t.name, layout: r.layout, viewport: p.viewport, id: r.id, status: r.status, detail: r.detail, shots: r.shots || [], manual: r.manual, autoStatus: r.autoStatus })));
   });
   return rows;
 }
@@ -65,11 +65,12 @@ function totals(rows) {
 // The newest earlier run of the same environment, if any.
 function findPrevious(runsDir, env, currentId) {
   if (!fs.existsSync(runsDir)) return null;
-  const dirs = fs.readdirSync(runsDir).filter((d) => d !== currentId && fs.existsSync(path.join(runsDir, d, 'results.json'))).sort();
+  const dirs = fs.readdirSync(runsDir).filter((d) => d < currentId && fs.existsSync(path.join(runsDir, d, 'results.json'))).sort(); // earlier runs only
+  const ovr = require('../store/overrides');
   for (let i = dirs.length - 1; i >= 0; i--) {
     try {
       const r = JSON.parse(fs.readFileSync(path.join(runsDir, dirs[i], 'results.json'), 'utf8'));
-      if (r.env === env) return r;
+      if (r.env === env) return ovr.applyOverrides(r, ovr.readOverrides(path.join(runsDir, dirs[i])));
     } catch (e) { /* skip unreadable run */ }
   }
   return null;

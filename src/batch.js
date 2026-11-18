@@ -32,7 +32,8 @@ function saveRun(runDir, run, checklist, prev) {
   // write to a temporary name first, so a reader (the dashboard sync) never sees half a file
   const put = (name, text) => { const f = path.join(runDir, name); fs.writeFileSync(f + '.tmp', text); fs.renameSync(f + '.tmp', f); };
   put('results.json', JSON.stringify(run, null, 2));
-  put('report.html', render(run, checklist, prev));
+  const ovr = require('./store/overrides'); // the report shows the manual verdicts; results.json stays the script's own
+  put('report.html', render(ovr.applyOverrides(run, ovr.readOverrides(runDir)), checklist, prev));
 }
 
 // Which themes are pivots, which go in which batch. Pure, so it can be tested.

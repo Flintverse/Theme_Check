@@ -52,7 +52,14 @@ figcaption{font:12px ui-monospace,monospace;color:var(--muted)}
 .FIXED{background:var(--pass);color:#fff}
 .note{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
 .note ul{margin:6px 0 0;padding-left:18px}
+.man{font:700 10px ui-monospace,monospace;padding:2px 6px;border-radius:4px;margin-left:6px;background:var(--accent);color:#fff;white-space:nowrap}
+.lb{display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.88);align-items:center;justify-content:center;padding:56px 16px 16px}
+.lb:target{display:flex}
+.lb img{max-width:100%;max-height:100%;border-radius:8px;background:#fff}
+.lb .x{position:fixed;top:12px;right:12px;width:44px;height:44px;border-radius:999px;background:#fff;color:#111;font:700 22px/44px system-ui;text-align:center;text-decoration:none}
+.lb .bg{position:absolute;inset:0}
 `;
+let lbCount = 0; // each picture gets its own pop-up (a pure CSS one: this page may not run scripts)
 
 const pill = (s) => `<span class="pill p-${esc(s)}">${esc(String(s).toUpperCase())}</span>`;
 const chg = (c) => (c ? `<span class="chg ${esc(c)}">${esc(c)}</span>` : '');
@@ -95,9 +102,13 @@ function render(run, checklist, prevRun) {
     const bad = rs.some((r) => FAIL(r.status));
     const status = bad ? 'fail' : rs.some((r) => r.status === 'review') ? 'review' : rs.every((r) => r.status === 'na') ? 'na' : 'pass';
     const lines = rs.slice().sort((a, b) => (FAIL(b.status) ? 1 : 0) - (FAIL(a.status) ? 1 : 0)).map((r) => {
-      const shots = (r.shots || []).map((s) => `<figure><a href="${esc(s)}"><img loading="lazy" src="${esc(s)}" alt=""></a><figcaption>${esc(s.split('/').slice(-1)[0])}</figcaption></figure>`).join('');
+      const shots = (r.shots || []).map((s) => {
+        const id2 = 'pic' + (++lbCount);
+        return `<figure><a href="#${id2}"><img loading="lazy" src="${esc(s)}" alt=""></a><figcaption>${esc(s.split('/').slice(-1)[0])}</figcaption></figure><div class="lb" id="${id2}"><a class="bg" href="#closed" aria-label="Close"></a><img src="${esc(s)}" alt=""><a class="x" href="#closed" aria-label="Close the picture" title="Close">&times;</a></div>`;
+      }).join('');
       const ev = shots ? `<div class="shots">${shots}</div>` : '';
-      return `<tr><td>${esc(r.theme)}</td><td>${esc(r.layout)}</td><td>${pill(r.status)}${chg(r.change)}</td><td>${esc(r.detail)}${ev}</td></tr>`;
+      const man = r.manual ? `<span class="man" title="Set by hand. The script said: ${esc(r.autoStatus)}">MANUAL ${esc(String(r.manual).toUpperCase())} (script: ${esc(r.autoStatus)})</span>` : '';
+      return `<tr><td>${esc(r.theme)}</td><td>${esc(r.layout)}</td><td>${pill(r.status)}${chg(r.change)}${man}</td><td>${esc(r.detail)}${ev}</td></tr>`;
     }).join('');
     return `<section class="card r-${status}" id="${esc(id)}"><div class="h"><span class="cid">${esc(id)}</span>${pill(status)}<span class="refs">${esc(m.area || '')} | ${esc(m.severity)} | ${esc(m.mode || '')}</span></div><h3>${esc(m.title)}</h3>
 <dl class="cols"><div><dt>Steps</dt><dd>${esc(m.steps)}</dd></div><div><dt>Expected</dt><dd>${esc(m.expected)}</dd></div></dl>

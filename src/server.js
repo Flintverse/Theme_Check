@@ -92,6 +92,20 @@ function createServer(root, opts) {
         const txt = fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').slice(-60).join('\n') : '';
         return send(res, 200, { running: !!current, log: txt });
       }
+      // a manual verdict (skip / pass / review / fail) on one check of one theme; null status = back to the script's result
+      if (req.method === 'PUT' && p === '/api/overrides') {
+        const body = await readBody(req);
+        const ovr = require('./store/overrides');
+        if (!/^[\w.-]{1,80}$/.test(String(body.run || ''))) return send(res, 400, { error: 'bad run id' });
+        if (!ovr.validKey(body.key)) return send(res, 400, { error: 'bad check key' });
+        if (body.status && !ovr.VERDICTS.includes(body.status)) return send(res, 400, { error: 'status must be skip, pass, review or fail' });
+        const runDir = path.join(runsDir(root, cfg), body.run);
+        if (!fs.existsSync(path.join(runDir, 'results.json'))) return send(res, 404, { error: 'this run has no results yet' });
+        const doc = ovr.withVerdict(ovr.readOverrides(runDir), body.key, body.status || null, body.orig, 'the dashboard on the test machine');
+        ovr.writeOverrides(runDir, doc);
+        const r = o.refresh ? await o.refresh(root, cfg, body.run) : require('./store/archive').refreshRun({ root, cfg, runId: body.run, checklist: cfgLib.loadChecklist(root) });
+        return send(res, 200, { ok: true, rev: doc.rev, items: doc.items, refreshed: !!(r && r.ok) });
+      }
       if (req.method === 'PUT' && p === '/api/themes') {
         const body = await readBody(req);
         if (!Array.isArray(body.themes)) return send(res, 400, { error: 'themes must be a list' });

@@ -2,6 +2,7 @@
 //   POST /api/ingest/ping                 connectivity and token check
 //   POST /api/ingest/progress             live progress JSON
 //   POST /api/ingest/state                dashboard data JSON
+//   GET  /api/ingest/overrides?run=<id>   the manual verdicts of one run (saved from the web page)
 //   GET  /api/ingest/config               the latest saved schedule + theme lists
 //   POST /api/ingest/config               the test machine saved a change itself (so the web page shows it)
 //   POST /api/ingest/config-status        what the test machine did with a saved configuration
@@ -20,6 +21,13 @@ async function handle({ request, env, params }) {
   if (kind === 'config' && request.method === 'GET') {
     const obj = await env.STORE.get('data/config.json');
     return obj ? new Response(obj.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : json({ rev: 0 });
+  }
+
+  if (kind === 'overrides' && request.method === 'GET') { // the manual verdicts of one run, saved from the web page
+    const run = new URL(request.url).searchParams.get('run') || '';
+    if (!/^[\w.-]{1,80}$/.test(run)) return json({ error: 'bad run id' }, 400);
+    const obj = await env.STORE.get(`runs/${run}/overrides.json`);
+    return obj ? new Response(obj.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : json({ rev: 0, items: {} });
   }
 
   if (kind === 'progress' || kind === 'state' || kind === 'config' || kind === 'config-status') {

@@ -301,12 +301,24 @@ svg.chart{width:100%;height:150px}
       }).join('') + '</tbody></table></div>' +
       '<div class="card"><h3>Recent events</h3><div class="log">' + (P.events.slice(-25).reverse().map(function (e) { return '<div><span class="muted">' + esc(String(e.t).slice(11, 19)) + '</span> ' + esc(e.msg) + '</div>'; }).join('') || '<div class="muted">Nothing yet.</div>') + '</div></div>';
   }
+  function withCounts(p) {
+    if (!p || p.none || !p.themes || p.counts) return p;
+    var proc = p.themes.filter(function (t) { return t.status === 'done' || t.status === 'failed'; });
+    var timed = proc.filter(function (t) { return t.status === 'done' && t.startedAt && t.finishedAt; });
+    var left = p.themes.length - proc.length;
+    p.counts = { total: p.themes.length, done: proc.length, left: left, failedSetup: p.themes.filter(function (t) { return t.status === 'failed'; }).length };
+    if (timed.length && left && p.running) {
+      var avg = timed.reduce(function (a, t) { return a + (new Date(t.finishedAt) - new Date(t.startedAt)); }, 0) / timed.length;
+      p.etaMinutes = Math.round(avg * left / 60000);
+    } else if (p.etaMinutes === undefined) p.etaMinutes = null;
+    return p;
+  }
   var progT = null;
   function loadProgress() {
     clearTimeout(progT);
     return apiGet('/api/progress').then(function (r) { if (!r.ok) throw 0; return r.json(); }).catch(function () { return { none: true }; })
       .then(function (p) {
-        var was = P && P.running; P = p;
+        var was = P && P.running; P = withCounts(p);
         if (!S) return;
         if (TAB === 'live') { $('view').innerHTML = vLive(); nav(); }
         else { var b = $('banner'); if (b) b.innerHTML = bannerHtml(); nav(); }

@@ -4,6 +4,7 @@ const path = require('path');
 const sync = require('./sync');
 const { buildState } = require('./publish');
 const { runsDir, dataDir } = require('./store/paths');
+const { withEta } = require('./store/progress');
 
 const remoteState = (root, cfg) => buildState(root, cfg, { remote: true });
 
@@ -14,7 +15,7 @@ function forRun(root, cfg) {
   console.log(`Monitor: pushing live progress to ${s.base} (about every ${Math.round(s.everyMs / 1000)} s)`);
   const pusher = sync.createProgressPusher(s);
   return {
-    onProgress: pusher,
+    onProgress: (s) => pusher(withEta(Object.assign({}, s))), // counts and the estimate travel with the progress
     onFinish: async ({ run, runDir }) => {
       await pusher.done();
       await sync.pushState(s, remoteState(root, cfg));

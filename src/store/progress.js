@@ -100,4 +100,4 @@ function withEta(s) {
   return s;
 }
 
-module.exports = { Progress, readProgress, pidAlive, fileFor };
+module.exports = { Progress, readProgress, pidAlive, fileFor, withEta };

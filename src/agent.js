@@ -61,6 +61,13 @@ async function checkOnce(root, cfg, opts) {
 // Keeps checking, forever. The Windows task "Theme check agent" starts this at logon.
 async function runAgent(root, cfg, log) {
   const say = log || ((m) => console.log('[' + require('./lib/time').fmtDateTime(new Date()) + ' UTC+7] ' + m));
+  const lock = path.join(root, 'history', 'agent.pid');
+  try {
+    const old = Number(fs.readFileSync(lock, 'utf8'));
+    if (old && old !== process.pid) { try { process.kill(old, 0); say('Another agent is already running (PID ' + old + '), exiting'); return; } catch (e) { /* stale lock */ } }
+  } catch (e) { /* no lock */ }
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  fs.writeFileSync(lock, String(process.pid));
   const monitor = require('./monitor');
   say('Agent started: checking Cloudflare for saved changes every minute');
   let last = 0;
@@ -80,21 +87,35 @@ async function runAgent(root, cfg, log) {
 
 // "Theme check agent" as a Windows task that starts at logon (hidden), plus start it now.
 function launcherPath(root) { return path.join(root, 'config', 'run-agent.cmd'); }
+const RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+function startNow(p) {
+  const { spawn } = require('child_process');
+  spawn('conhost.exe', ['--headless', p], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+}
 function installAgent(root) {
   if (process.platform !== 'win32') return { ok: false, error: 'Windows only.' };
   const p = launcherPath(root);
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, '@echo off\r\ncd /d "' + root + '"\r\n"' + process.execPath + '" src/cli.js agent >> history\\agent.log 2>&1\r\n');
+  fs.mkdirSync(path.join(root, 'history'), { recursive: true });
+  fs.writeFileSync(p, ['@echo off', 'cd /d "' + root + '"', '"' + process.execPath + '" src/cli.js agent >> history\\agent.log 2>&1', ''].join('\r\n'));
   const tr = 'conhost.exe --headless "' + p + '"';
+  // 1) Task Scheduler at logon (needs administrator rights on most PCs)
   const c = spawnSync('schtasks', ['/Create', '/F', '/TN', 'Theme check agent', '/SC', 'ONLOGON', '/TR', tr], { encoding: 'utf8' });
-  if (c.status !== 0) return { ok: false, error: ((c.stderr || c.stdout) || 'schtasks failed').trim() };
-  const r = spawnSync('schtasks', ['/Run', '/TN', 'Theme check agent'], { encoding: 'utf8' });
-  return { ok: true, message: 'Installed. It starts at every logon' + (r.status === 0 ? ' and was started now.' : ' (start it once with: schtasks /Run /TN "Theme check agent").') };
+  if (c.status === 0) {
+    const r = spawnSync('schtasks', ['/Run', '/TN', 'Theme check agent'], { encoding: 'utf8' });
+    return { ok: true, message: 'Installed (Task Scheduler). It starts at every logon' + (r.status === 0 ? ' and was started now.' : '.') };
+  }
+  // 2) no administrator rights: a per-user startup entry (HKCU Run), same effect
+  const g = spawnSync('reg', ['add', RUN_KEY, '/v', 'ThemeCheckAgent', '/t', 'REG_SZ', '/d', tr, '/f'], { encoding: 'utf8' });
+  if (g.status !== 0) return { ok: false, error: ((g.stderr || g.stdout) || c.stderr || 'could not install').trim() };
+  try { startNow(p); } catch (e) { return { ok: true, message: 'Installed (startup entry). It starts at the next logon; could not start it now: ' + e.message }; }
+  return { ok: true, message: 'Installed (per-user startup entry, no administrator rights needed). It starts at every logon and was started now.' };
 }
 function uninstallAgent() {
   if (process.platform !== 'win32') return { ok: false, error: 'Windows only.' };
-  const r = spawnSync('schtasks', ['/Delete', '/F', '/TN', 'Theme check agent'], { encoding: 'utf8' });
-  return { ok: r.status === 0 || /cannot find|does not exist/i.test(r.stderr || ''), message: 'Removed.' };
+  spawnSync('schtasks', ['/Delete', '/F', '/TN', 'Theme check agent'], { encoding: 'utf8' });
+  spawnSync('reg', ['delete', RUN_KEY, '/v', 'ThemeCheckAgent', '/f'], { encoding: 'utf8' });
+  return { ok: true, message: 'Removed from startup. A running agent stops at the next logoff (or end its node process).' };
 }
 
 module.exports = { checkOnce, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };

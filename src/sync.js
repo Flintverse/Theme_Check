@@ -30,7 +30,7 @@ async function send(sync, method, p, body, contentType, fetchImpl) {
 // A failing monitor never breaks the run.
 function createProgressPusher(sync, opts) {
   const o = Object.assign({ everyMs: (sync && sync.everyMs) || 30000, fetchImpl: null, onError: (m) => console.log(m), now: () => Date.now() }, opts);
-  let last = 0, timer = null, pending = null, warned = false, inflight = Promise.resolve();
+  let last = 0, timer = null, pending = null, warned = false, inflight = Promise.resolve(), lastCount = 0, lastPhase = '';
   const flush = () => {
     timer = null;
     const body = JSON.stringify(pending);
@@ -39,7 +39,11 @@ function createProgressPusher(sync, opts) {
   };
   const push = (s) => {
     pending = s;
-    const due = o.now() - last >= o.everyMs;
+    // the first real state (theme list), and every change of phase, goes out at once; the rest is throttled
+    const count = (s.themes || []).length;
+    const changed = (count && !lastCount) || (s.phase && s.phase !== lastPhase);
+    lastCount = count; lastPhase = s.phase || '';
+    const due = changed || o.now() - last >= o.everyMs;
     if (!s.running || due) { if (timer) clearTimeout(timer); flush(); }
     else if (!timer) timer = setTimeout(flush, Math.max(0, o.everyMs - (o.now() - last)));
   };

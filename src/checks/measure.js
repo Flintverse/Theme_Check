@@ -223,10 +223,15 @@ function measure(arg) {
       btns.forEach((b) => { const r = rect(b); if (r.right > cr.right + 2 || r.left < cr.left - 2) probs.push(`"${(b.innerText || '').trim().slice(0, 18)}" button spills ${Math.round(Math.max(r.right - cr.right, cr.left - r.left))}px outside the card`); });
       const opts = q('[class*="variant" i] label, [class*="option" i] label, [class*="swatch" i], [class*="option-value" i]', card).filter((e) => vis(e) && (e.innerText || '').trim());
       opts.slice(0, 12).forEach((o) => {
-        const cs = getComputedStyle(o);
-        if (cs.textAlign === 'right' || cs.textAlign === 'end' || cs.textAlign === 'left' || cs.textAlign === 'start') {
-          if (rect(o).width > 40 && o.children.length === 0) probs.push(`option "${(o.innerText || '').trim().slice(0, 12)}" is aligned ${cs.textAlign}, not centred`);
-        }
+        // where does the text really sit in its box? (the computed text-align is "left"/"start" almost everywhere by default)
+        const rg = document.createRange();
+        rg.selectNodeContents(o);
+        const tr = rg.getBoundingClientRect(), or = rect(o);
+        if (!(tr.width > 0 && or.width > 0)) return;
+        const dx = Math.abs((tr.left + tr.right) / 2 - (or.left + or.right) / 2), dy = Math.abs((tr.top + tr.bottom) / 2 - (or.top + or.bottom) / 2);
+        const label = (o.innerText || '').trim().slice(0, 12);
+        if (or.width > tr.width + 12 && dx > T.alignPx + 2) probs.push(`option "${label}": the text is ${Math.round(dx)}px off-centre sideways (aligned ${(tr.left + tr.right) / 2 < (or.left + or.right) / 2 ? 'left' : 'right'})`);
+        else if (or.height > tr.height + 12 && dy > T.alignPx + 2) probs.push(`option "${label}": the text is ${Math.round(dy)}px off-centre vertically (aligned ${(tr.top + tr.bottom) / 2 < (or.top + or.bottom) / 2 ? 'top' : 'bottom'})`);
       });
       const panel = q('[class*="choose" i], [class*="variant" i], [class*="quick-add" i]', card).find((e) => vis(e) && rect(e).height > 40);
       if (panel && Number(getComputedStyle(panel).opacity) < 0.9) probs.push('options panel is see-through (opacity ' + getComputedStyle(panel).opacity + ')');
@@ -270,7 +275,8 @@ function measure(arg) {
       // drawer must be open
       const scope = q('filter-option, fdt-filter-option').find((e) => vis(e) && onScreen(e));
       if (!scope) return R('na', 'Drawer is not open.');
-      const x = q('.search-filters__close, [class*="close" i], [aria-label*="close" i]').find((e) => vis(e) && onScreen(e) && !e.closest('.search-filters__filter-active-tag-item') && !e.closest('#fdt-popup-theme-detect'));
+      const xs = q('.search-filters__close, [class*="close" i], [aria-label*="close" i]').filter((e) => vis(e) && onScreen(e) && !e.closest('.search-filters__filter-active-tag-item') && !e.closest('#fdt-popup-theme-detect') && rect(e).width <= 150 && rect(e).height <= 150);
+      const x = xs.find((e) => e.querySelector('svg, img') || e.tagName === 'BUTTON') || xs[0];
       if (!x) return R('fail', 'Drawer close (X) button is not visible.');
       const r = rect(x);
       const probs = [];

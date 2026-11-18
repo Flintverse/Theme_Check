@@ -199,6 +199,10 @@ async function checkChooseOptions(p, id) {
 // Which layout is really on screen. A label that was never applied would make every later result meaningless.
 async function detectLayout(page) {
   return page.evaluate(() => {
+    // Findter marks the layout on its own element: .search-filters__layout.fdt-layout-<horizontal|vertical|offcanvas>
+    const marked = document.querySelector('.search-filters__layout');
+    const m = marked && String(marked.className).match(/fdt-layout-(horizontal|vertical|offcanvas)/);
+    if (m) return m[1];
     const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
     if (Array.from(document.querySelectorAll('.search-filters__open-wrapper')).some(vis)) return 'offcanvas';
     const groups = Array.from(document.querySelectorAll('filter-option, fdt-filter-option')).filter(vis);
@@ -365,4 +369,4 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
   return { layout, viewport: viewportName, results: p.results, blocked };
 }
 
-module.exports = { runPass, load, collectors, changedRatio };
+module.exports = { runPass, load, collectors, changedRatio, detectLayout };

@@ -115,3 +115,34 @@ test('suggestion: Findter widget plus theme box at the same time is detected', a
   assert.ok(m.themeBoxes >= 1);
   assert.ok(m.widthDiffPct > 10);
 });
+
+test('V-09 measures where the option text sits in its box (default left alignment is not a bug)', async () => {
+  const card = (css) => `<div class="search-filters__product-item" data-tc-card="1" style="width:300px;position:relative"><div class="variant-picker"><label class="option-value" style="display:block;width:200px;height:36px;border:1px solid #000;${css}">M</label></div></div>`;
+  const centred = await run(wrap(card('text-align:center;line-height:36px')), 'V-09');
+  assert.strictEqual(centred.status, 'pass', centred.detail);
+  const left = await run(wrap(card('text-align:left;line-height:36px')), 'V-09');
+  assert.strictEqual(left.status, 'fail');
+  assert.match(left.detail, /off-centre sideways \(aligned left\)/);
+  const right = await run(wrap(card('text-align:right;line-height:36px')), 'V-09');
+  assert.match(right.detail, /aligned right/);
+  const top = await run(wrap(card('text-align:center;line-height:14px')), 'V-09');
+  assert.match(top.detail, /vertically \(aligned top\)/);
+});
+
+test('O-03 ignores the page-wide overlay and judges the small close button', async () => {
+  const html = wrap(`<filter-option style="display:block;width:100px;height:30px">Vendor</filter-option>
+    <div class="search-filters__close-overlay" style="position:fixed;left:0;top:0;width:1000px;height:60px"></div>
+    <button class="search-filters__close" style="position:relative;width:40px;height:40px;padding:0;border:1px solid #000"><svg width="16" height="16" style="position:absolute;left:12px;top:12px"><path d="M0 0L16 16M16 0L0 16" stroke="#000"/></svg></button>`);
+  const r = await run(html, 'O-03');
+  assert.strictEqual(r.status, 'pass', r.detail);
+});
+
+test('the layout is read from Findter\'s own class, also when the horizontal bar wraps to two rows', async () => {
+  const { detectLayout } = require('../src/checks/run');
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+  await page.setContent('<div class="search-filters__layout fdt-layout-horizontal"><filter-option style="display:block">A</filter-option><filter-option style="display:block;margin-top:80px">B</filter-option></div>');
+  assert.strictEqual(await detectLayout(page), 'horizontal');
+  await page.setContent('<div class="search-filters__layout fdt-layout-offcanvas"></div>');
+  assert.strictEqual(await detectLayout(page), 'offcanvas');
+  await page.close();
+});

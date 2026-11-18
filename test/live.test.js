@@ -118,7 +118,7 @@ const TOKEN = 'a-long-test-token-1234567890';
 const imp = (rel) => import(pathToFileURL(path.join(SRC, rel)).href);
 
 test('cloudflare ingest: refuses without the token, stores progress, state and pictures; serves them back', async () => {
-  const env = { STORE: fakeR2(), INGEST_TOKEN: TOKEN };
+  const env = { STORE: fakeR2(), INGEST_TOKEN: TOKEN, READ_KEY: 'script-key-1234' };
   const ingest = await imp('functions/api/ingest/[[path]].js');
   const req = (method, body, auth) => new Request('https://x.dev/api/ingest/x', { method, body, headers: auth === false ? {} : { authorization: 'Bearer ' + (auth || TOKEN) } });
   const post = (p, body, auth, e) => ingest.onRequestPost({ request: req('POST', body, auth), env: e || env, params: { path: [p] } });
@@ -138,10 +138,10 @@ test('cloudflare ingest: refuses without the token, stores progress, state and p
   assert.strictEqual(env.STORE.m.get('runs/run1/report.html').opts.httpMetadata.contentType, 'text/html; charset=utf-8');
   assert.strictEqual(env.STORE.m.get('runs/run1/dawn/a.png').opts.httpMetadata.contentType, 'image/png');
 
-  const get = (fn, e, headers) => fn.onRequestGet({ request: new Request('https://x.dev/api/x', { headers: headers || {} }), env: e, params: { path: ['run1', 'report.html'] } });
+  const get = (fn, e, headers) => fn.onRequestGet({ request: new Request('https://x.dev/api/x', { headers: Object.assign({ 'x-access-key': 'script-key-1234' }, headers || {}) }), env: e, params: { path: ['run1', 'report.html'] } });
   const state = await imp('functions/api/state.js');
   assert.deepStrictEqual((await (await get(state, env)).json()).runs, [{ runId: 'r' }]);
-  const empty = await (await get(state, { STORE: fakeR2() })).json();
+  const empty = await (await get(state, { STORE: fakeR2(), READ_KEY: 'script-key-1234' })).json();
   assert.strictEqual(empty.readOnly, true, 'empty state before the first push');
   assert.strictEqual(empty.mediaLocal, true);
   const progress = await imp('functions/api/progress.js');
@@ -154,39 +154,102 @@ test('cloudflare ingest: refuses without the token, stores progress, state and p
   const rep = await get(runs, env);
   assert.strictEqual(rep.status, 200);
   assert.match(rep.headers.get('content-security-policy'), /default-src 'none'/);
-  assert.strictEqual((await runs.onRequestGet({ request: new Request('https://x.dev/runs/x'), env, params: { path: ['run1', 'nope.png'] } })).status, 404);
-  assert.strictEqual((await runs.onRequestGet({ request: new Request('https://x.dev/runs/x'), env, params: { path: ['..', 'data', 'state.json'] } })).status, 404);
+  assert.strictEqual((await runs.onRequestGet({ request: new Request('https://x.dev/runs/x', { headers: { 'x-access-key': 'script-key-1234' } }), env, params: { path: ['run1', 'nope.png'] } })).status, 404);
+  assert.strictEqual((await runs.onRequestGet({ request: new Request('https://x.dev/runs/x', { headers: { 'x-access-key': 'script-key-1234' } }), env, params: { path: ['..', 'data', 'state.json'] } })).status, 404);
 });
 
-test('cloudflare reading: with READ_KEY set, data and pictures need the team code (header or login cookie)', async () => {
-  const env = { STORE: fakeR2(), READ_KEY: 'team-code-1234' };
+test('google sign-in: only a verified @bsscommerce.com Google account gets a session', async () => {
+  const crypto = require('crypto');
+  const b64u = (b) => Buffer.from(b).toString('base64url');
+  const kp = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const other = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const jwk = Object.assign(kp.publicKey.export({ format: 'jwk' }), { kid: 'k1', alg: 'RS256', use: 'sig' });
+  const now = Math.floor(Date.now() / 1000);
+  const base = { iss: 'https://accounts.google.com', aud: 'client-123', exp: now + 3600, iat: now - 5, email: 'dung@bsscommerce.com', email_verified: true, hd: 'bsscommerce.com', name: 'Dung N' };
+  const token = (over, key, header) => {
+    const h = b64u(JSON.stringify(Object.assign({ alg: 'RS256', kid: 'k1', typ: 'JWT' }, header || {})));
+    const p = b64u(JSON.stringify(Object.assign({}, base, over)));
+    const sig = crypto.sign('RSA-SHA256', Buffer.from(h + '.' + p), (key || kp).privateKey);
+    return h + '.' + p + '.' + b64u(sig);
+  };
+  const env = { STORE: fakeR2(), GOOGLE_CLIENT_ID: 'client-123', SESSION_SECRET: 's'.repeat(40), ALLOWED_DOMAIN: 'bsscommerce.com', GOOGLE_JWKS_JSON: JSON.stringify({ keys: [jwk] }) };
   await env.STORE.put('data/state.json', JSON.stringify({ runs: [{ runId: 'secret-run' }] }));
   await env.STORE.put('runs/run1/a.png', 'png', { httpMetadata: { contentType: 'image/png' } });
+  const login = await imp('functions/api/login.js');
   const state = await imp('functions/api/state.js');
   const progress = await imp('functions/api/progress.js');
   const runs = await imp('functions/runs/[[path]].js');
-  const login = await imp('functions/api/login.js');
-  const call = (fn, headers, params) => fn.onRequestGet({ request: new Request('https://x.dev/api/x', { headers: headers || {} }), env, params: params || {} });
-  assert.strictEqual((await call(state)).status, 401);
-  assert.strictEqual((await call(state, { 'x-access-key': 'wrong-code-9999' })).status, 401);
-  assert.strictEqual((await call(progress)).status, 401);
-  assert.strictEqual((await call(runs, {}, { path: ['run1', 'a.png'] })).status, 401, 'pictures are protected too');
-  assert.strictEqual((await call(state, { 'x-access-key': 'team-code-1234' })).status, 200);
-  const bad = await login.onRequestPost({ request: new Request('https://x.dev/api/login', { method: 'POST', body: JSON.stringify({ code: 'not-the-code-1' }) }), env });
-  assert.strictEqual(bad.status, 401);
-  const good = await login.onRequestPost({ request: new Request('https://x.dev/api/login', { method: 'POST', body: JSON.stringify({ code: 'team-code-1234' }) }), env });
+  const me = await imp('functions/api/me.js');
+  const cfgFn = await imp('functions/api/config.js');
+  const logout = await imp('functions/api/logout.js');
+  const signIn = (credential) => login.onRequestPost({ request: new Request('https://x.dev/api/login', { method: 'POST', body: JSON.stringify({ credential }) }), env });
+  const read = (fn, headers, params) => fn.onRequestGet({ request: new Request('https://x.dev/api/x', { headers: headers || {} }), env, params: params || {} });
+
+  // nobody is signed in
+  assert.strictEqual((await read(state)).status, 401);
+  assert.strictEqual((await read(progress)).status, 401);
+  assert.strictEqual((await read(runs, {}, { path: ['run1', 'a.png'] })).status, 401, 'pictures are protected too');
+  assert.strictEqual((await read(me)).status, 401);
+  assert.deepStrictEqual(await (await read(cfgFn)).json(), { googleClientId: 'client-123', domain: 'bsscommerce.com' });
+
+  // a good company account
+  const good = await signIn(token({}));
   assert.strictEqual(good.status, 200);
   const setCookie = good.headers.get('set-cookie');
+  assert.match(setCookie, /tc_session=/);
   assert.match(setCookie, /HttpOnly/);
   assert.match(setCookie, /Secure/);
-  assert.match(setCookie, /SameSite=Strict/);
+  assert.match(setCookie, /SameSite=Lax/);
   const cookie = setCookie.split(';')[0];
-  assert.strictEqual((await call(state, { cookie })).status, 200, 'the cookie unlocks the data');
-  assert.strictEqual((await call(runs, { cookie }, { path: ['run1', 'a.png'] })).status, 200, 'and the pictures');
-  assert.strictEqual((await call(state, { cookie: 'tc_auth=' + 'a'.repeat(64) })).status, 401, 'a made-up cookie does not');
+  assert.strictEqual((await read(state, { cookie })).status, 200);
+  assert.strictEqual((await read(progress, { cookie })).status, 200);
+  assert.strictEqual((await read(runs, { cookie }, { path: ['run1', 'a.png'] })).status, 200);
+  assert.strictEqual((await (await read(me, { cookie })).json()).email, 'dung@bsscommerce.com');
+
+  // everything else is refused
+  const refuse = async (label, credential, status) => assert.strictEqual((await signIn(credential)).status, status, label);
+  await refuse('a personal Gmail account', token({ email: 'someone@gmail.com', hd: undefined }), 403);
+  await refuse('Gmail with a forged hd claim', token({ email: 'someone@gmail.com', hd: 'bsscommerce.com' }), 403);
+  await refuse('look-alike domain', token({ email: 'a@evilbsscommerce.com', hd: 'evilbsscommerce.com' }), 403);
+  await refuse('domain used as a sub-domain of another', token({ email: 'a@bsscommerce.com.evil.com', hd: 'bsscommerce.com' }), 403);
+  await refuse('company address but another workspace in hd', token({ hd: 'other.com' }), 403);
+  await refuse('missing hd (consumer account using a company address)', token({ hd: undefined }), 403);
+  await refuse('email not verified', token({ email_verified: false }), 401);
+  await refuse('token for another app', token({ aud: 'someone-elses-client' }), 401);
+  await refuse('expired token', token({ exp: now - 3600 }), 401);
+  await refuse('wrong issuer', token({ iss: 'https://evil.example' }), 401);
+  await refuse('signed with a different key', token({}, other), 401);
+  await refuse('unknown key id', token({}, kp, { kid: 'nope' }), 401);
+  await refuse('alg none', 'eyJhbGciOiJub25lIn0.' + b64u(JSON.stringify(base)) + '.', 401);
+  const parts = token({}).split('.');
+  await refuse('payload edited after signing', parts[0] + '.' + b64u(JSON.stringify(Object.assign({}, base, { email: 'ceo@bsscommerce.com' }))) + '.' + parts[2], 401);
+  await refuse('garbage', 'not-a-token', 401);
+
+  // a forged or changed session cookie is not accepted
+  const [body, sig] = cookie.split('=')[1].split('.');
+  const forged = Buffer.from(JSON.stringify({ e: 'ceo@bsscommerce.com', n: '', x: now + 9999 })).toString('base64url');
+  assert.strictEqual((await read(state, { cookie: 'tc_session=' + forged + '.' + sig })).status, 401);
+  assert.strictEqual((await read(state, { cookie: 'tc_session=' + body + '.' + 'A'.repeat(sig.length) })).status, 401);
+  const lib = await imp('cf/lib.js');
+  const old = await lib.makeSession(env, { email: 'dung@bsscommerce.com', name: '' }, Date.now() - 13 * 3600 * 1000);
+  assert.strictEqual((await read(state, { cookie: 'tc_session=' + old })).status, 401, 'sessions end after 12 hours');
+  const wrongDomain = await lib.makeSession(env, { email: 'x@gmail.com', name: '' });
+  assert.strictEqual((await read(state, { cookie: 'tc_session=' + wrongDomain })).status, 401, 'the domain is checked on every request');
+
+  // sign-out clears the cookie; a script key still works only if one is configured
+  assert.match((await logout.onRequestPost()).headers.get('set-cookie'), /Max-Age=0/);
+  assert.strictEqual((await read(state, { 'x-access-key': 'whatever-1234' })).status, 401, 'no READ_KEY configured: no key access');
+  env.READ_KEY = 'script-key-1234';
+  assert.strictEqual((await read(state, { 'x-access-key': 'script-key-1234' })).status, 200);
+  assert.strictEqual((await read(state, { 'x-access-key': 'script-key-9999' })).status, 401);
+
+  // not configured: nothing opens
+  const bare = { STORE: env.STORE };
+  assert.strictEqual((await state.onRequestGet({ request: new Request('https://x.dev/api/state'), env: bare })).status, 401);
+  assert.strictEqual((await login.onRequestPost({ request: new Request('https://x.dev/api/login', { method: 'POST', body: '{}' }), env: bare })).status, 503);
 });
 
-// ---- the Live tab
+
 test('the Live tab shows run progress theme by theme, and a banner on the other tabs', async () => {
   const root = tmp();
   ['config', 'checklist', 'ui'].forEach((d) => fs.cpSync(path.join(SRC, d), path.join(root, d), { recursive: true }));
@@ -229,31 +292,31 @@ test('the Live tab shows run progress theme by theme, and a banner on the other 
   } finally { await browser.close(); server.close(); }
 });
 
-test('the Cloudflare copy: login with the team code (cookie), then pictures show inline from /runs', async () => {
+test('the Cloudflare copy: Google sign-in (company accounts only), then pictures show inline from /runs', async () => {
   const http = require('http');
   const ui = fs.readFileSync(path.join(SRC, 'ui', 'index.html'));
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   const state = { readOnly: true, mediaLocal: true, envs: ['staging'], themes: [], schedule: { description: 'x' }, runs: [{ runId: '2026-11-18-staging', env: 'staging', date: '2026-11-18', startedAt: '2026-11-18T01:00:00Z', themesTotal: 1, themesTested: 1, themesWithIssues: 1, failedChecks: 1, newCount: 1, fixedCount: 0, worstThemes: [{ theme: 'Dawn', fails: 1 }], topChecks: [{ id: 'V-10', title: 'Selected looks selected', severity: 'critical', themes: 1 }], fixed: [], setupFailures: [] }], issues: { items: { 'staging|Dawn|vertical|V-10': { env: 'staging', theme: 'Dawn', layout: 'vertical', id: 'V-10', title: 'Selected looks selected', severity: 'critical', status: 'open', firstSeen: '2026-11-18', lastSeen: '2026-11-18', lastRun: '2026-11-18-staging', history: [{ s: 'fail', date: '2026-11-18' }], evidence: { run: '2026-11-18-staging', shots: ['dawn/a.png'] } } } }, themeStatus: [], checklist: [], library: {} };
-  const authed = (req) => /(^|;\s*)tc_auth=ok123/.test(req.headers.cookie || '');
+  const authed = (req) => /(^|;\s*)tc_session=ok123/.test(req.headers.cookie || '');
   const srv = http.createServer((req, res) => {
+    const send = (code, type, body, extra) => { res.writeHead(code, Object.assign({ 'Content-Type': type }, extra || {})); res.end(body); };
+    if (req.url === '/api/config') return send(200, 'application/json', JSON.stringify({ googleClientId: 'client-123', domain: 'bsscommerce.com' }));
     if (req.method === 'POST' && req.url === '/api/login') {
       let b = ''; req.on('data', (d) => { b += d; }).on('end', () => {
-        const ok = JSON.parse(b).code === 'team-code-1234';
-        res.writeHead(ok ? 200 : 401, Object.assign({ 'Content-Type': 'application/json' }, ok ? { 'Set-Cookie': 'tc_auth=ok123; Path=/; HttpOnly' } : {}));
-        res.end(ok ? '{"ok":true}' : '{"error":"wrong code"}');
+        const cred = JSON.parse(b).credential;
+        if (cred === 'company') return send(200, 'application/json', '{"ok":true}', { 'Set-Cookie': 'tc_session=ok123; Path=/; HttpOnly' });
+        return send(403, 'application/json', JSON.stringify({ error: 'Only @bsscommerce.com accounts can sign in.' }));
       });
       return;
     }
+    if (req.method === 'POST' && req.url === '/api/logout') return send(200, 'application/json', '{"ok":true}', { 'Set-Cookie': 'tc_session=; Path=/; Max-Age=0' });
+    if (req.url === '/api/me') return authed(req) ? send(200, 'application/json', '{"email":"dung@bsscommerce.com","name":"Dung"}') : send(401, 'application/json', '{}');
     if (req.url.startsWith('/api/state') || req.url.startsWith('/api/progress')) {
-      if (!authed(req)) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end('{"error":"access code needed"}'); }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(req.url.startsWith('/api/progress') ? '{"running":false,"none":true}' : JSON.stringify(state));
+      if (!authed(req)) return send(401, 'application/json', '{"error":"sign in"}');
+      return send(200, 'application/json', req.url.startsWith('/api/progress') ? '{"running":false,"none":true}' : JSON.stringify(state));
     }
-    if (req.url.startsWith('/runs/')) {
-      if (!authed(req)) { res.writeHead(401); return res.end('no'); }
-      res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(png);
-    }
-    res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(ui);
+    if (req.url.startsWith('/runs/')) return authed(req) ? send(200, 'image/png', png) : send(401, 'text/plain', 'no');
+    send(200, 'text/html', ui);
   });
   await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -261,21 +324,32 @@ test('the Cloudflare copy: login with the team code (cookie), then pictures show
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
+    // a stand-in for Google's sign-in script: its button hands the page a credential, chosen by the test
+    await page.route('https://accounts.google.com/gsi/client', (route) => route.fulfill({ contentType: 'text/javascript', body: `
+      window.__cred = 'other'; window.google = { accounts: { id: {
+        initialize: function (o) { window.__cb = o.callback; window.__init = o; },
+        renderButton: function (el) { var b = document.createElement('button'); b.id = 'fake-google'; b.textContent = 'Sign in with Google'; b.onclick = function () { window.__cb({ credential: window.__cred }); }; el.appendChild(b); }
+      } } };` }));
     await page.goto(`http://127.0.0.1:${srv.address().port}/`);
-    await page.waitForSelector('#k-in');
-    assert.ok(!(await page.textContent('main')).includes('Dawn'), 'no data before the code');
-    await page.fill('#k-in', 'wrong-code-9999');
-    await page.click('#k-go');
-    await page.waitForFunction(() => /not accepted/.test(document.querySelector('main').textContent));
-    await page.fill('#k-in', 'team-code-1234');
-    await page.click('#k-go');
+    await page.waitForSelector('#fake-google');
+    assert.ok(!(await page.textContent('main')).includes('Dawn'), 'no data before signing in');
+    assert.strictEqual(await page.evaluate(() => window.__init.client_id), 'client-123');
+    assert.strictEqual(await page.evaluate(() => window.__init.hd), 'bsscommerce.com', 'Google is asked to offer company accounts first');
+    await page.click('#fake-google');
+    await page.waitForFunction(() => /Only @bsscommerce\.com accounts/.test(document.querySelector('#g-msg').textContent));
+    await page.evaluate(() => { window.__cred = 'company'; });
+    await page.click('#fake-google');
     await page.waitForSelector('.kpis');
     assert.match(await page.textContent('#mode'), /READ-ONLY/);
+    await page.waitForFunction(() => /dung@bsscommerce\.com/.test(document.querySelector('#who').textContent));
     await page.click('nav a[href="#issues"]');
     await page.waitForSelector('.ev img');
     await page.waitForFunction(() => { const i = document.querySelector('.ev img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 15000 });
     assert.strictEqual(await page.locator('.ev video').count(), 0);
+    await page.click('#signout');
+    await page.waitForSelector('#fake-google');
     assert.deepStrictEqual(errors, []);
     await page.close();
   } finally { await browser.close(); srv.close(); }
 });
+

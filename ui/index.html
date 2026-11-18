@@ -75,7 +75,7 @@ svg.chart{width:100%;height:150px}
 </head>
 <body>
 <header><div class="bar">
-  <span class="brand">Theme check</span><span id="mode" class="badge">...</span>
+  <span class="brand">Theme check</span><span id="mode" class="badge">...</span><span id="who" class="muted small"></span>
   <nav id="nav"></nav>
 </div></header>
 <div id="lightbox" role="dialog" aria-label="Picture"></div>
@@ -94,21 +94,46 @@ svg.chart{width:100%;height:150px}
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); });
   }
 
-  var triedCode = false;
   function apiGet(path) { return fetch(path, { cache: 'no-store', credentials: 'same-origin' }); }
-  function askKey(wrong) {
-    $('main').innerHTML = '<div class="card" style="max-width:460px;margin:40px auto"><h2>Team access code</h2><p class="muted small">' + (wrong ? 'That code was not accepted. ' : '') + 'Ask the person who set up the dashboard for the code.</p><div class="row"><input type="password" id="k-in" placeholder="Access code" autocomplete="off"><button class="primary" id="k-go">Open</button></div></div>';
-    function go() {
-      fetch('/api/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: $('k-in').value.trim() }) })
-        .then(function (r) { if (r.ok) { triedCode = false; location.reload(); } else { triedCode = true; askKey(true); } })
-        .catch(function () { askKey(true); });
-    }
-    $('k-go').onclick = go; $('k-in').onkeydown = function (e) { if (e.key === 'Enter') go(); };
+  function loadGoogle() {
+    return new Promise(function (resolve, reject) {
+      if (window.google && window.google.accounts && window.google.accounts.id) return resolve();
+      var sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
+      sc.onload = function () { resolve(); }; sc.onerror = function () { reject(new Error('Google sign-in could not be loaded')); };
+      document.head.appendChild(sc);
+    });
+  }
+  // The Cloudflare copy is for @bsscommerce.com people only: sign in with Google, the server checks the account.
+  function askKey(msg) {
+    $('main').innerHTML = '<div class="card" style="max-width:460px;margin:40px auto"><h2>Sign in</h2><p class="muted small" id="g-msg">' + esc(msg || 'Use your company Google account (@bsscommerce.com).') + '</p><div id="g-btn" style="min-height:44px"></div></div>';
+    function fail(t) { var m = $('g-msg'); if (m) { m.textContent = t; m.style.color = 'var(--fail)'; } }
+    fetch('/api/config', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (cfg) {
+      if (!cfg.googleClientId) { fail('Sign-in is not configured yet.'); return; }
+      return loadGoogle().then(function () {
+        window.google.accounts.id.initialize({
+          client_id: cfg.googleClientId, hd: cfg.domain, auto_select: false,
+          callback: function (resp) {
+            fetch('/api/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential: resp.credential }) })
+              .then(function (r) { return r.json().then(function (j) { if (r.ok) { location.reload(); } else { fail(j.error || 'Sign-in failed.'); } }); })
+              .catch(function () { fail('Sign-in failed. Try again.'); });
+          },
+        });
+        window.google.accounts.id.renderButton($('g-btn'), { theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular' });
+      });
+    }).catch(function (e) { fail(e.message || 'Sign-in could not start.'); });
+  }
+  function showWho() {
+    if (!S || !S.readOnly) return;
+    fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (u) {
+      var w = $('who'); if (!w) return;
+      w.innerHTML = esc(u.email) + ' &middot; <a href="#" id="signout">Sign out</a>';
+      $('signout').onclick = function (e) { e.preventDefault(); fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).then(function () { location.reload(); }); };
+    }).catch(function () { /* local dashboard: no sign-in */ });
   }
   function load() {
-    return apiGet('/api/state').then(function (r) { if (r.status === 401) { askKey(triedCode); throw 'key'; } if (!r.ok) throw 0; return r.json(); })
+    return apiGet('/api/state').then(function (r) { if (r.status === 401) { askKey(); throw 'key'; } if (!r.ok) throw 0; return r.json(); })
       .catch(function (e) { if (e === 'key') throw e; return fetch('api/state.json', { cache: 'no-store' }).then(function (r) { return r.json(); }); })
-      .then(function (s) { S = s; draftThemes = null; render(); })
+      .then(function (s) { S = s; draftThemes = null; render(); showWho(); })
       .catch(function (e) { if (e === 'key') return; $('main').innerHTML = '<div class="card">Could not load data. Run <code>node src/cli.js ui</code> or open the published copy.</div>'; });
   }
 

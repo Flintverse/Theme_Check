@@ -7,3 +7,10 @@ compatibility_date = "2024-11-01"
 [[r2_buckets]]
 binding = "STORE"
 bucket_name = "theme-check-data"
+
+# Public settings (not secrets). GOOGLE_CLIENT_ID is the OAuth "Web application" client created in Google Cloud Console.
+# Secrets (set with: npx.cmd wrangler@3 pages secret put NAME --project-name bss-theme-check): INGEST_TOKEN, SESSION_SECRET
+# (optional READ_KEY for scripts that read the data).
+[vars]
+ALLOWED_DOMAIN = "bsscommerce.com"
+GOOGLE_CLIENT_ID = "245269666680-8fb2q00e2iukir6fm1ob44g89idg2l8v.apps.googleusercontent.com"

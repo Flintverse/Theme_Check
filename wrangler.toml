@@ -13,4 +13,6 @@ bucket_name = "theme-check-data"
 # (optional READ_KEY for scripts that read the data).
 [vars]
 ALLOWED_DOMAIN = "bsscommerce.com"
+# Who may CHANGE the schedule and the theme lists from the web page (comma separated emails). Everyone else can only look.
+EDITORS = "dungnn@bsscommerce.com"
 GOOGLE_CLIENT_ID = "245269666680-8fb2q00e2iukir6fm1ob44g89idg2l8v.apps.googleusercontent.com"

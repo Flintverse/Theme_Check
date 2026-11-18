@@ -33,6 +33,10 @@ Nothing secret goes into git: `config.local.json`, `.profile-*/` (saved Shopify 
 | `node src/cli.js publish [--out site]` | Builds a **read-only** copy of the dashboard in `site/` for a static host (see docs/DEPLOYMENT.md). |
 | `npm test` | Unit tests: the in-page measurements (good and bad layouts) and the report / compare / mail code. |
 
+Save once, everything follows: when someone on the list `EDITORS` (wrangler.toml) saves the schedule or the theme list on the web page, or you save it in the local dashboard, the change is written to `config/schedule.json` / `config/themes.json`, applied to Windows Task Scheduler, sent to Cloudflare, and committed and pushed to GitHub (only those two files, author "Theme Check"). The page then shows each step with ok / failed. For changes made on the web page the hidden **agent** on the test machine does this (it checks Cloudflare every minute): install it once with `node src/cli.js agent --install` (Windows task "Theme check agent", starts at logon, no window; `--uninstall` removes it).
+
+All times in the logs, reports, mail and dashboard are **UTC+7**; a run belongs to its UTC+7 day. Stored timestamps stay in UTC. Task Scheduler runs at the PC's clock, so the PC must be set to UTC+7.
+
 Scheduling: set it in the dashboard (Schedule tab: daily, weekly, or every N days) and press Apply; it registers the Windows task "Theme check". The PC must be on, and the login from `node src/cli.js login` must still be valid.
 
 ## History: where everything is kept

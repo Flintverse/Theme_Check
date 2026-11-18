@@ -18,6 +18,8 @@ function createServer(root, opts) {
   const o = Object.assign({ spawnRun: true }, opts);
   const uiDir = path.join(root, 'ui');
   let current = null; // { pid, startedAt, args, logFile, child }
+  // after a save: Task Scheduler + Cloudflare + GitHub follow (injectable, so tests never touch the real machine)
+  const propagate = o.propagate || ((r, c, what, who) => require('./propagate').propagate(r, c, what, who));
 
   const state = () => {
     const cfg = cfgLib.loadConfig(root);
@@ -94,7 +96,8 @@ function createServer(root, opts) {
         const body = await readBody(req);
         if (!Array.isArray(body.themes)) return send(res, 400, { error: 'themes must be a list' });
         const list = body.autoBatch ? cfgLib.autoBatch(cfgLib.cleanThemes(body.themes), Number(body.autoBatch) || 10) : body.themes;
-        return send(res, 200, { themes: cfgLib.saveThemes(root, list) });
+        const saved = cfgLib.saveThemes(root, list);
+        return send(res, 200, { themes: saved, steps: await propagate(root, cfg, { themes: true }, 'the dashboard on the test machine') });
       }
       if (req.method === 'PUT' && p === '/api/schedule') {
         const body = await readBody(req);
@@ -102,7 +105,7 @@ function createServer(root, opts) {
         const err = sched.validate(s, Object.keys(cfg.envs));
         if (err.length) return send(res, 400, { error: err.join('; ') });
         sched.saveSchedule(root, s);
-        return send(res, 200, { schedule: s, description: sched.describe(s), command: sched.runCommand(s, root) });
+        return send(res, 200, { schedule: s, description: sched.describe(s), command: sched.runCommand(s, root), steps: await propagate(root, cfg, { schedule: true }, 'the dashboard on the test machine') });
       }
       if (req.method === 'POST' && p === '/api/schedule/apply') {
         const s = sched.loadSchedule(root);

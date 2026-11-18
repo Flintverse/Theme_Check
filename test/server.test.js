@@ -23,7 +23,7 @@ test.before(async () => {
   [mk('2026-11-11-staging', '2026-11-11', { Dawn: [['V-10', 'fail', 'no tick <script>alert(1)</script>'], ['V-03', 'pass']], Craft: [['V-10', 'fail', 'no tick'], ['V-06', 'fail', 'circle only']], Rise: [['V-10', 'pass']] }),
     mk('2026-11-18-staging', '2026-11-18', { Dawn: [['V-10', 'pass'], ['V-03', 'pass']], Craft: [['V-10', 'fail', 'no tick'], ['V-06', 'pass']], Rise: [['V-10', 'fail', 'no tick']] })]
     .forEach((run) => { fs.mkdirSync(path.join(root, 'history', 'runs', run.runId), { recursive: true }); fs.writeFileSync(path.join(root, 'history', 'runs', run.runId, 'results.json'), JSON.stringify(run)); finalizeRun({ root, cfg, run, checklist, trackIssues: true }); });
-  server = await listen(root, 0, { spawnRun: false });
+  server = await listen(root, 0, { spawnRun: false, propagate: async () => [{ step: 'stub', ok: true }] });
   base = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch({ channel: 'chrome', headless: true });
 });

@@ -128,3 +128,39 @@ export const EMPTY_STATE = { readOnly: true, mediaLocal: true, envs: [], themes:
 
 // A report is plain HTML with no scripts: lock it down so it can never run code.
 export const REPORT_CSP = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+
+// ---------- who may CHANGE the schedule and the theme lists (everyone signed in may only look) ----------
+export const editorEmails = (env) => String(env.EDITORS || '').toLowerCase().split(/[\s,;]+/).filter((e) => e.includes('@'));
+export async function editorUser(request, env) {
+  const u = await sessionUser(request, env);
+  return u && editorEmails(env).includes(u.email) ? u : null;
+}
+
+// ---------- the configuration sent from the web page: checked here, and checked again by the test machine ----------
+const NAME_OK = /^[A-Za-z0-9][A-Za-z0-9 &'.\-]{0,59}$/;
+export function validateConfig(c) {
+  const err = [];
+  if (!c || typeof c !== 'object') return ['bad request'];
+  const s = c.schedule;
+  if (s !== undefined) {
+    if (!s || typeof s !== 'object') err.push('schedule must be an object');
+    else {
+      if (!['daily', 'weekly', 'everyNDays'].includes(s.mode)) err.push('mode must be daily, weekly or everyNDays');
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(s.time))) err.push('time must be HH:MM');
+      if (s.mode === 'weekly' && !['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(s.weekday)) err.push('weekday is not valid');
+      if (s.mode === 'everyNDays' && !(Number.isInteger(Number(s.everyDays)) && Number(s.everyDays) >= 1 && Number(s.everyDays) <= 90)) err.push('everyDays must be 1 to 90');
+      if (!/^[a-z0-9_-]{1,20}$/i.test(String(s.env))) err.push('env is not valid');
+      if (!(s.batches === 'all' || /^\d+(,\d+)*$/.test(String(s.batches)))) err.push('batches must be "all" or like 1,2');
+    }
+  }
+  const t = c.themes;
+  if (t !== undefined) {
+    if (!Array.isArray(t) || t.length > 300) err.push('themes must be a list of at most 300');
+    else t.forEach((x, i) => {
+      if (!x || !NAME_OK.test(String(x.name || '').trim())) err.push(`theme ${i + 1}: the name is not valid`);
+      if (x && x.envs !== undefined && !(Array.isArray(x.envs) && x.envs.every((e) => /^[a-z0-9_-]{1,20}$/i.test(String(e))))) err.push(`theme ${i + 1}: envs are not valid`);
+    });
+  }
+  if (s === undefined && t === undefined) err.push('nothing to save');
+  return err.slice(0, 8);
+}

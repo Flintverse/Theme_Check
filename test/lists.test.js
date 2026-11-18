@@ -76,7 +76,7 @@ test('dashboard: lists, library status, and pictures shown inline in the issue t
   fs.writeFileSync(path.join(rd, 'results.json'), JSON.stringify(run));
   finalizeRun({ root, cfg: {}, run, checklist, trackIssues: true });
   saveLibrary(root, {}, 'staging', cfgLib.themesForEnv(cfgLib.loadThemes(root), 'staging', 10), [{ id: '1', name: 'Horizon' }, { id: '2', name: 'Dawn' }, { id: '3', name: 'Dawn' }, { id: '4', name: 'Craft' }, { id: '5', name: 'Foo Theme' }]);
-  const server = await listen(root, 0, { spawnRun: false });
+  const server = await listen(root, 0, { spawnRun: false, propagate: async () => [{ step: 'stub', ok: true }] });
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {

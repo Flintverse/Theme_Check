@@ -1,11 +1,14 @@
-// POST/PUT /api/ingest/...  (runner only, needs Authorization: Bearer <INGEST_TOKEN>)
+// POST/PUT/GET /api/ingest/...  (runner only, needs Authorization: Bearer <INGEST_TOKEN>)
 //   POST /api/ingest/ping                 connectivity and token check
 //   POST /api/ingest/progress             live progress JSON
 //   POST /api/ingest/state                dashboard data JSON
+//   GET  /api/ingest/config               the latest saved schedule + theme lists
+//   POST /api/ingest/config               the test machine saved a change itself (so the web page shows it)
+//   POST /api/ingest/config-status        what the test machine did with a saved configuration
 //   PUT  /api/ingest/media/<run>/<file>   a report, summary or picture of one run (no videos)
-import { json, isAuthorized, cleanKey, typeFor } from '../../../cf/lib.js';
+import { json, isAuthorized, cleanKey, typeFor, validateConfig } from '../../../cf/lib.js';
 
-const LIMITS = { progress: 1e6, state: 20e6, media: 15e6 };
+const LIMITS = { progress: 1e6, state: 20e6, media: 15e6, config: 2e6, 'config-status': 1e5 };
 
 async function handle({ request, env, params }) {
   if (!isAuthorized(request, env)) return json({ error: 'unauthorized' }, 401);
@@ -14,10 +17,23 @@ async function handle({ request, env, params }) {
   if (kind === 'ping') return json({ ok: true, bucket: !!env.STORE });
   if (!env.STORE) return json({ error: 'R2 bucket binding STORE is missing' }, 500);
 
-  if (kind === 'progress' || kind === 'state') {
+  if (kind === 'config' && request.method === 'GET') {
+    const obj = await env.STORE.get('data/config.json');
+    return obj ? new Response(obj.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : json({ rev: 0 });
+  }
+
+  if (kind === 'progress' || kind === 'state' || kind === 'config' || kind === 'config-status') {
     const text = await request.text();
     if (text.length > LIMITS[kind]) return json({ error: 'too large' }, 413);
-    try { JSON.parse(text); } catch (e) { return json({ error: 'invalid JSON' }, 400); }
+    let body;
+    try { body = JSON.parse(text); } catch (e) { return json({ error: 'invalid JSON' }, 400); }
+    if (kind === 'config') {
+      const problems = validateConfig(body);
+      if (problems.length) return json({ error: problems.join('; ') }, 400);
+      body = { rev: Number(body.rev) || Date.now(), updatedAt: new Date().toISOString(), updatedBy: String(body.updatedBy || 'test machine').slice(0, 80), source: 'machine', schedule: body.schedule, themes: body.themes };
+      await env.STORE.put('data/config.json', JSON.stringify(body), { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
+      return json({ ok: true, rev: body.rev });
+    }
     await env.STORE.put(`data/${kind}.json`, text, { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
     return json({ ok: true });
   }
@@ -33,5 +49,6 @@ async function handle({ request, env, params }) {
   return json({ error: 'not found' }, 404);
 }
 
+export const onRequestGet = handle;
 export const onRequestPost = handle;
 export const onRequestPut = handle;

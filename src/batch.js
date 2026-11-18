@@ -21,7 +21,8 @@ const { Progress } = require('./store/progress');
 const LAYOUTS = ['vertical', 'horizontal', 'offcanvas'];
 const envName = (env) => String(env.adminHandle || '').toUpperCase().replace(/[^A-Z0-9]/g, '_');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const stamp = () => new Date().toISOString().slice(0, 10);
+const T = require('./lib/time');
+const stamp = () => T.today(); // the day in UTC+7
 
 // Pauses between actions. Generous on purpose: Shopify's admin is slow to settle after an install, a delete or a publish.
 const DELAYS = { afterInstall: 12000, afterClean: 10000, beforeEdit: 6000, afterExit: 4000, afterPublish: 15000, installWait: 180000 };
@@ -127,13 +128,13 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   const delays = Object.assign({}, DELAYS, cfg.delays || {}, opts.skipWait ? { installWait: 0 } : {});
   // a second run on the same day (for example a short test run) must not overwrite the first one
   let runId = `${stamp()}-${envKey}`;
-  if (fs.existsSync(path.join(runsDir(root, cfg), runId, 'results.json'))) runId += `-${new Date().toTimeString().slice(0, 5).replace(':', '')}`;
+  if (fs.existsSync(path.join(runsDir(root, cfg), runId, 'results.json'))) runId += `-${T.fmtTime(new Date()).slice(0, 5).replace(':', '')}`;
   const runDir = path.join(runsDir(root, cfg), runId);
   const prev = findPrevious(runsDir(root, cfg), envKey, runId);
   const run = { runId, env: envKey, shop: env.shop, startedAt: new Date().toISOString(), themes: [] };
   const prog = new Progress(dataDir(root, cfg), { runId, env: envKey, mode: opts.show ? 'visible windows' : opts.headless ? 'headless' : 'background (off-screen window)' }, opts.onProgress);
   prog.setThemes(themeList);
-  const log = (m) => { console.log(m); prog.event(String(m).trim()); };
+  const log = (m) => { console.log(`[${T.fmtTime(new Date())}] ${String(m).replace(/^\n/, '')}`); prog.event(String(m).trim()); };
   let outcome = 'completed';
   const onSig = () => { prog.event('Stopped by the user'); prog.finish('cancelled'); process.exit(130); };
   process.on('SIGINT', onSig);

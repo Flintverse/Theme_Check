@@ -10,7 +10,7 @@ function emptyTracker() { return { updatedAt: null, items: {} }; }
 function updateTracker(tracker, run, rows, checklist) {
   const t = tracker && tracker.items ? tracker : emptyTracker();
   const meta = new Map(checklist.items.map((i) => [i.id, i]));
-  const date = String(run.startedAt).slice(0, 10);
+  const date = require('../lib/time').fmtDate(run.startedAt); // the day in UTC+7
   rows.forEach((r) => {
     const key = keyOf(run.env, r);
     const failing = FAIL(r.status);

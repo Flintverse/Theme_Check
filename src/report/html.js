@@ -108,7 +108,7 @@ function render(run, checklist, prevRun) {
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body><div class="wrap">
 <div><div class="eyebrow">Theme check | Findter</div><h1>Theme compatibility run ${esc(run.runId)}</h1></div>
-<dl class="facts"><div><dt>Environment</dt><dd>${esc(run.env)} (${esc(run.shop || '')})</dd></div><div><dt>Run</dt><dd>${esc(run.startedAt)}</dd></div><div><dt>Themes</dt><dd>${themes.length}</dd></div><div><dt>Checklist</dt><dd>${checklist.items.length} items, v${esc(checklist.version)}</dd></div><div><dt>Compared with</dt><dd>${prevRun ? esc(prevRun.runId) : 'no earlier run'}</dd></div></dl>
+<dl class="facts"><div><dt>Environment</dt><dd>${esc(run.env)} (${esc(run.shop || '')})</dd></div><div><dt>Run</dt><dd>${esc(require('../lib/time').fmtStamp(run.startedAt))}</dd></div><div><dt>Themes</dt><dd>${themes.length}</dd></div><div><dt>Checklist</dt><dd>${checklist.items.length} items, v${esc(checklist.version)}</dd></div><div><dt>Compared with</dt><dd>${prevRun ? esc(prevRun.runId) : 'no earlier run'}</dd></div></dl>
 <div class="totals"><div class="t t-pass"><b>${t.pass}</b>PASS</div><div class="t t-fail"><b>${t.fail + (t.error || 0)}</b>FAIL</div><div class="t t-review"><b>${t.review}</b>REVIEW</div><div class="t t-na"><b>${t.na}</b>N/A</div></div>
 <h2 class="sec">Found</h2>${sharedHtml}${fixedHtml}
 <h2 class="sec">Theme x checklist</h2>${matrix}

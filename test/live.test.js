@@ -261,7 +261,7 @@ test('the Live tab shows run progress theme by theme, and a banner on the other 
   p.addResults('Craft', [{ status: 'pass' }, { status: 'fail' }, { status: 'review' }]);
   p.setTheme('Rise', { status: 'failed', step: 'not_in_findter_theme_list: no Rise' });
   p.event('Craft: layout horizontal');
-  const server = await listen(root, 0, { spawnRun: false });
+  const server = await listen(root, 0, { spawnRun: false, propagate: async () => [{ step: 'stub', ok: true }] });
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {

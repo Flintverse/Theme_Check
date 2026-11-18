@@ -49,6 +49,7 @@ async function watch(root, cfg, opts) {
   await sync.pushState(s, remoteState(root, cfg)).catch((e) => console.log('state push failed: ' + e.message));
   console.log('Watching the run progress and pushing it to ' + s.base + ' (Ctrl+C to stop)');
   const tick = async () => {
+    if (opts && opts.extraTick) await opts.extraTick();
     const p = readProgress(dataDir(root, cfg));
     if (!p) return;
     pusher(p);

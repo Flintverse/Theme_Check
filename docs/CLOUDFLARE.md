@@ -52,6 +52,13 @@ Thử: `node src/cli.js sync --all` (đẩy dữ liệu và ảnh của mọi l�
 - Ai trong công ty cũng vào được bằng tài khoản Google của mình. Người rời công ty mất tài khoản thì mất quyền xem sau khi phiên cũ hết hạn (tối đa 12 giờ). Muốn cắt ngay: đổi `SESSION_SECRET`.
 - Đổi `SESSION_SECRET` (làm mọi người đăng nhập lại): `npx.cmd wrangler@3 pages secret put SESSION_SECRET --project-name bss-theme-check` với một chuỗi ngẫu nhiên mới, rồi deploy lại.
 
+## Sửa lịch chạy / danh sách theme ngay trên web
+
+- Chỉ email trong biến `EDITORS` (wrangler.toml, hiện `dungnn@bsscommerce.com`, ngăn cách bằng dấu phẩy) mới lưu được; người khác trong công ty chỉ xem.
+- Bấm Save trên web: Cloudflare giữ cấu hình (có số thứ tự `rev`); **agent** trên máy chạy (`node src/cli.js agent --install`, kiểm tra mỗi phút) kiểm tra lại, ghi `config/schedule.json` / `themes.json`, cập nhật Windows Task Scheduler, commit + push lên GitHub, rồi báo từng bước về trang.
+- Lưu trên dashboard cục bộ thì làm cùng chuỗi bước đó ngay lập tức.
+- Mọi giờ hiển thị theo UTC+7.
+
 ## Lỗi thường gặp
 
 | Hiện tượng | Nguyên nhân |

@@ -18,7 +18,7 @@ function buildSummary(run, checklist, prevRun) {
   return {
     runId: run.runId,
     env: run.env,
-    date: String(run.startedAt).slice(0, 10),
+    date: require('../lib/time').fmtDate(run.startedAt), // the day in UTC+7
     startedAt: run.startedAt,
     comparedWith: prevRun ? prevRun.runId : null,
     themesTotal: (run.themes || []).length,

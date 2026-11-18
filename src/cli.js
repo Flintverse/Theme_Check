@@ -8,6 +8,7 @@
  * node src/cli.js report --run 2026-11-18-staging      rebuild report.html from results.json
  * node src/cli.js mail   --run 2026-11-18-staging [--dry]  send (or print) the Gmail summary
  * node src/cli.js library --env staging              read the store's theme library and compare it with the theme list
+ * node src/cli.js agent [--install|--uninstall]      the hidden helper: applies changes saved on the web page, keeps the live progress on the page
  * node src/cli.js watch                               keep pushing the live progress to Cloudflare (for a run started without the monitor)
  * node src/cli.js sync   [--run <id>] [--all]         push the dashboard data (and a run's report and pictures) to Cloudflare
  * node src/cli.js ui     [--port 4173]                 local dashboard: themes, schedule, run now, history, issue tracker
@@ -127,6 +128,14 @@ async function doMail(cfg, runId, dry) {
     console.log('  present (' + r.present.length + '): ' + r.present.map((p) => p.name + (p.ids.length > 1 ? ' x' + p.ids.length : '')).join(', '));
     console.log('  missing (' + r.missing.length + '): ' + r.missing.join(', '));
     console.log('  other themes in the store: ' + (r.extras.map((e) => e.name).join(', ') || 'none'));
+    return;
+  }
+
+  if (cmd === 'agent') {
+    const ag = require('./agent');
+    if (args.install) { const r = ag.installAgent(ROOT); console.log(r.ok ? r.message : 'Failed: ' + r.error); process.exitCode = r.ok ? 0 : 1; return; }
+    if (args.uninstall) { const r = ag.uninstallAgent(); console.log(r.ok ? r.message : 'Failed: ' + r.error); return; }
+    await ag.runAgent(ROOT, cfg);
     return;
   }
 

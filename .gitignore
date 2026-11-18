@@ -9,7 +9,8 @@ config/config.local.json
 # history (runs, tracker, logs) stays out of this public repo; point archive.dir at a private data repo to share it
 history/
 site/
-config/schedule.json
 test/_ui-*.png
 config/run-scheduled.cmd
 .secrets/
+config/.applied-rev
+config/run-agent.cmd

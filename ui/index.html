@@ -83,6 +83,7 @@ svg.chart{width:100%;height:150px}
 
 <script>
 (function () {
+  var CAN = false; // signed in on the web copy AND listed as an editor
   var S = null, P = null, TAB = 'overview', draftThemes = null, issueFilter = { status: 'open', theme: '', check: '', env: '' };
   var TABS = [['live', 'Live'], ['overview', 'Overview'], ['issues', 'Issue tracker'], ['runs', 'Runs'], ['themes', 'Themes'], ['schedule', 'Schedule']];
 
@@ -122,10 +123,12 @@ svg.chart{width:100%;height:150px}
       });
     }).catch(function (e) { fail(e.message || 'Sign-in could not start.'); });
   }
+  function isRO() { return !!S.readOnly && !CAN; }
   function showWho() {
     if (!S || !S.readOnly) return;
     fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (u) {
       var w = $('who'); if (!w) return;
+      if (!!u.canEdit !== CAN) { CAN = !!u.canEdit; render(); }
       w.innerHTML = esc(u.email) + ' &middot; <a href="#" id="signout">Sign out</a>';
       $('signout').onclick = function (e) { e.preventDefault(); fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).then(function () { location.reload(); }); };
     }).catch(function () { /* local dashboard: no sign-in */ });
@@ -140,7 +143,7 @@ svg.chart{width:100%;height:150px}
   function nav() {
     $('nav').innerHTML = TABS.map(function (t) { return '<a href="#' + t[0] + '" class="' + (TAB === t[0] ? 'on' : '') + '">' + t[1] + (t[0] === 'live' && P && P.running ? ' <span class="pulse"></span>' : '') + '</a>'; }).join('');
     var m = $('mode');
-    m.textContent = S.readOnly ? 'READ-ONLY COPY' + (S.publishedAt ? ' · ' + S.publishedAt.slice(0, 10) : '') : 'LOCAL · EDITABLE';
+    m.textContent = S.readOnly ? 'READ-ONLY COPY' + (S.publishedAt ? ' · ' + tsLocal(S.publishedAt).slice(0, 10) : '') : 'LOCAL · EDITABLE';
     m.className = 'badge' + (S.readOnly ? '' : ' local');
   }
 
@@ -261,6 +264,8 @@ svg.chart{width:100%;height:150px}
   }
 
   /* ---- Live ---- */
+  // Every time on this page is shown in UTC+7 (stored times are UTC).
+  function tsLocal(iso) { var t = Date.parse(iso); return isNaN(t) ? String(iso || '') : new Date(t + 7 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19); }
   function fmt(ms) {
     if (!(ms >= 0)) return '-';
     var m = Math.floor(ms / 60000), h = Math.floor(m / 60);
@@ -289,7 +294,7 @@ svg.chart{width:100%;height:150px}
     var end = P.finishedAt ? new Date(P.finishedAt).getTime() : Date.now();
     var stale = P.running && P.updatedAt && Date.now() - new Date(P.updatedAt).getTime() > 90000;
     var cur = P.current;
-    return '<div><h2>Live progress <span class="pill ' + st[1] + '">' + st[0] + '</span></h2><p class="muted small">Run ' + esc(P.runId) + ' (' + esc(P.env) + '), started ' + esc(String(P.startedAt).replace('T', ' ').slice(0, 16)) + ', ' + esc(P.mode || '') + ' mode. Updated ' + ago(P.updatedAt) + '.</p></div>' +
+    return '<div><h2>Live progress <span class="pill ' + st[1] + '">' + st[0] + '</span></h2><p class="muted small">Run ' + esc(P.runId) + ' (' + esc(P.env) + '), started ' + esc(tsLocal(P.startedAt).slice(0, 16)) + ' (UTC+7), ' + esc(P.mode || '') + ' mode. Updated ' + ago(P.updatedAt) + '.</p></div>' +
       (stale ? '<div class="note">No update for over 90 seconds. A step may be waiting on Shopify (the editor save waits up to a minute). If this stays, check the machine.</div>' : '') +
       '<div class="card"><div class="row" style="justify-content:space-between"><b>' + c.done + ' of ' + c.total + ' themes done</b><span class="muted small">' + pct + '%' + (P.etaMinutes != null ? ' &middot; about ' + P.etaMinutes + ' min left (estimate)' : '') + ' &middot; elapsed ' + fmt(end - new Date(P.startedAt).getTime()) + '</span></div><div class="pbar" style="margin-top:8px" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
       '<p style="margin:12px 0 0"><b>Now:</b> ' + (P.running ? (cur ? esc(cur.theme) + ' &ndash; ' + esc(cur.step || cur.status) + ' <span class="muted small">(this step ' + ago(cur.since) + ')</span>' : esc(P.step || P.phase)) : esc(P.phase)) + '</p></div>' +
@@ -299,7 +304,7 @@ svg.chart{width:100%;height:150px}
         var tm = t.startedAt ? fmt((t.finishedAt ? new Date(t.finishedAt) : Date.now()) - new Date(t.startedAt)) : '-';
         return '<tr><td>' + (i + 1) + '</td><td>' + esc(t.name) + '<div class="small muted">batch ' + esc(t.batch) + '</div></td><td><span class="pill st-' + esc(t.status) + '">' + esc(t.status.toUpperCase()) + '</span></td><td class="small">' + esc(t.step || '') + '</td><td>' + (t.fail ? '<b style="color:var(--fail)">' + t.fail + '</b>' : '0') + '</td><td>' + t.pass + '</td><td>' + tm + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
-      '<div class="card"><h3>Recent events</h3><div class="log">' + (P.events.slice(-25).reverse().map(function (e) { return '<div><span class="muted">' + esc(String(e.t).slice(11, 19)) + '</span> ' + esc(e.msg) + '</div>'; }).join('') || '<div class="muted">Nothing yet.</div>') + '</div></div>';
+      '<div class="card"><h3>Recent events (UTC+7)</h3><div class="log">' + (P.events.slice(-25).reverse().map(function (e) { return '<div><span class="muted">' + esc(tsLocal(e.t).slice(11, 19)) + '</span> ' + esc(e.msg) + '</div>'; }).join('') || '<div class="muted">Nothing yet.</div>') + '</div></div>';
   }
   function withCounts(p) {
     if (!p || p.none || !p.themes || p.counts) return p;
@@ -332,7 +337,7 @@ svg.chart{width:100%;height:150px}
   function themesList() { return draftThemes || S.themes; }
   function inEnv(t, env) { return (t.envs || ['staging', 'prod']).indexOf(env) >= 0; }
   function vThemes() {
-    var ro = S.readOnly, list = themesList(), env = themesEnv, lib = (S.library || {})[env] || null;
+    var ro = isRO(), list = themesList(), env = themesEnv, lib = (S.library || {})[env] || null;
     var rows = list.filter(function (t) { return inEnv(t, env); });
     var active = rows.filter(function (t) { return t.enabled !== false; });
     var batchOf = {}; active.forEach(function (t, i) { batchOf[t.name] = Math.floor(i / 10) + 1; });
@@ -341,9 +346,9 @@ svg.chart{width:100%;height:150px}
     var open = {}; (S.themeStatus || []).forEach(function (t) { if (t.env === env) open[t.theme] = (open[t.theme] || 0) + t.open; });
     var haveN = lib ? lib.present.length : null;
     return '<div><h2>Themes</h2><p class="muted small">Names exactly as the Shopify Theme Store shows them. A store holds at most 20 themes, so each list is tested in batches of 10: install, test, delete, next batch. Batches are worked out from the list order.</p></div>' +
-      (ro ? '<div class="note">Read-only copy. Open the dashboard on the test machine to change the lists.</div>' : '') +
+      (ro ? '<div class="note">You can look at the lists but not change them. Editors can change them here, or on the test machine.</div>' : S.readOnly ? '<div class="ok">Changes saved here are applied by the test machine within about a minute (schedule task, GitHub and this page).</div>' : '') +
       '<div class="card"><div class="row"><label class="f">List<select id="t-env">' + S.envs.map(function (e) { return '<option value="' + esc(e) + '"' + (e === env ? ' selected' : '') + '>' + esc(e) + ' list (' + list.filter(function (t) { return inEnv(t, e) && t.enabled !== false; }).length + ' themes)</option>'; }).join('') + '</select></label>' +
-      '<span class="small"><b>' + active.length + '</b> to test in <b>' + nBatches + '</b> batch(es)' + (lib ? ' &middot; in the store library now: <b>' + haveN + '</b>, missing: <b>' + lib.missing.length + '</b> (checked ' + esc(String(lib.checkedAt).replace('T', ' ').slice(0, 16)) + ')' : ' &middot; store library not checked yet (<code>node src/cli.js library --env ' + esc(env) + '</code>)') + '</span></div>' +
+      '<span class="small"><b>' + active.length + '</b> to test in <b>' + nBatches + '</b> batch(es)' + (lib ? ' &middot; in the store library now: <b>' + haveN + '</b>, missing: <b>' + lib.missing.length + '</b> (checked ' + esc(tsLocal(lib.checkedAt).slice(0, 16)) + ' UTC+7' + ')' : ' &middot; store library not checked yet (<code>node src/cli.js library --env ' + esc(env) + '</code>)') + '</span></div>' +
       '<div class="row" style="margin-top:10px"><label class="f">Add a theme to this list<input type="text" id="t-new" placeholder="e.g. Impulse" maxlength="60" ' + (ro ? 'disabled' : '') + '></label><button id="t-add" ' + (ro ? 'disabled' : '') + '>Add</button><button id="t-bulk-toggle" ' + (ro ? 'disabled' : '') + '>Add many...</button></div>' +
       '<div id="t-bulk" class="hide" style="margin-top:10px"><textarea id="t-bulk-text" placeholder="One theme per line"></textarea><button id="t-bulk-add">Add these</button></div></div>' +
       (lib && lib.extras && lib.extras.length ? '<div class="note">Also in the store but not in this list: ' + lib.extras.map(function (x) { return esc(x.name); }).join(', ') + '</div>' : '') +
@@ -358,11 +363,11 @@ svg.chart{width:100%;height:150px}
           '<td class="small">' + S.envs.map(function (e) { return '<label style="margin-right:8px"><input type="checkbox" class="t-env" data-i="' + idx + '" data-env="' + esc(e) + '" ' + (inEnv(t, e) ? 'checked' : '') + (ro ? ' disabled' : '') + '> ' + esc(e) + '</label>'; }).join('') + '</td>' +
           '<td><button class="danger t-del" data-i="' + idx + '"' + (ro ? ' disabled' : '') + '>Remove</button></td></tr>';
       }).join('') + '</tbody></table></div>' +
-      '<div class="row"><button class="primary" id="t-save" ' + (ro || !draftThemes ? 'disabled' : '') + '>Save changes</button><span id="t-msg" class="muted small">' + (draftThemes ? 'Unsaved changes.' : '') + '</span></div>';
+      '<div class="row"><button class="primary" id="t-save" ' + (ro || !draftThemes ? 'disabled' : '') + '>Save changes</button><span id="t-msg" class="muted small">' + (draftThemes ? 'Unsaved changes.' : '') + '</span></div><div id="save-steps"></div>';
   }
   function bindThemes() {
     $('t-env').onchange = function (e) { themesEnv = e.target.value; render(); };
-    if (S.readOnly) return;
+    if (isRO()) return;
     function draft() { if (!draftThemes) draftThemes = S.themes.map(function (t) { return Object.assign({}, t, { envs: (t.envs || ['staging', 'prod']).slice() }); }); return draftThemes; }
     function add(names) {
       var d = draft(), have = {}; d.forEach(function (t, i) { have[t.name.toLowerCase()] = i; });
@@ -383,16 +388,51 @@ svg.chart{width:100%;height:150px}
       el.onchange = function () { var t = draft()[+el.dataset.i], e = el.dataset.env, i = t.envs.indexOf(e); if (el.checked && i < 0) t.envs.push(e); if (!el.checked && i >= 0) t.envs.splice(i, 1); render(); };
     });
     Array.prototype.forEach.call(document.querySelectorAll('.t-del'), function (el) { el.onclick = function () { var d = draft(); if (confirm('Remove ' + d[+el.dataset.i].name + ' from ALL lists? Its past results and issues stay in the history.')) { d.splice(+el.dataset.i, 1); render(); } }; });
-    $('t-save').onclick = function () { api('PUT', '/api/themes', { themes: draftThemes }).then(function () { return load(); }).then(function () { $('t-msg') && ($('t-msg').textContent = 'Saved.'); }).catch(function (e) { $('t-msg').textContent = 'Could not save: ' + e.message; }); };
+    $('t-save').onclick = function () { saveConfig({ themes: draftThemes }, 't-msg', function () { draftThemes = null; return load(); }); };
+  }
+
+  function stepsHtml(steps) {
+    return '<div class="card" style="margin-top:8px"><h3>What happened</h3><ul style="margin:0;padding-left:18px">' + (steps || []).map(function (x) {
+      return '<li>' + (x.ok ? '<span style="color:var(--pass)">&#10003;</span> ' : '<span style="color:var(--fail)">&#10007;</span> ') + '<b>' + esc(x.step) + '</b>' + (x.detail ? ': ' + esc(x.detail) : '') + '</li>';
+    }).join('') + '</ul></div>';
+  }
+  function pollConfigStatus(rev, msgId, tries) {
+    var m = $(msgId), box = $('save-steps'); if (!m) return;
+    fetch('/api/config-status', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.status && j.status.rev === rev) {
+        m.textContent = (j.status.ok ? 'Applied' : 'Applied with problems') + ' by the test machine at ' + tsLocal(j.status.at) + ' UTC+7.';
+        m.style.color = j.status.ok ? 'var(--pass)' : 'var(--fail)';
+        if (box) box.innerHTML = stepsHtml(j.status.steps);
+      } else if (tries < 60) { m.textContent = 'Saved. Waiting for the test machine to apply it (it checks every minute)...'; setTimeout(function () { pollConfigStatus(rev, msgId, tries + 1); }, 5000); }
+      else { m.textContent = 'Saved, but the test machine has not picked it up yet. Is the agent running there? (node src/cli.js agent --install)'; m.style.color = 'var(--fail)'; }
+    }).catch(function () { if (tries < 60) setTimeout(function () { pollConfigStatus(rev, msgId, tries + 1); }, 8000); });
+  }
+  // payload: { schedule } and/or { themes }
+  function saveConfig(payload, msgId, after) {
+    var m = $(msgId); if (m) { m.textContent = 'Saving...'; m.style.color = 'var(--muted)'; }
+    if (S.readOnly) {
+      return fetch('/api/config', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Could not save'); return j; }); })
+        .then(function (j) { pollConfigStatus(j.rev, msgId, 0); })
+        .catch(function (e) { if ($(msgId)) { $(msgId).textContent = e.message; $(msgId).style.color = 'var(--fail)'; } });
+    }
+    var url = payload.themes ? '/api/themes' : '/api/schedule', body = payload.themes ? { themes: payload.themes } : payload.schedule;
+    return api('PUT', url, body).then(function (r) {
+      var ok = (r.steps || []).every(function (x) { return x.ok; });
+      return Promise.resolve(after ? after(r) : null).then(function () {
+        var mm = $(msgId); if (mm) { mm.textContent = ok ? 'Saved, and everything is up to date.' : 'Saved, but one step failed (see below).'; mm.style.color = ok ? 'var(--pass)' : 'var(--fail)'; }
+        var box = $('save-steps'); if (box) box.innerHTML = stepsHtml(r.steps);
+      });
+    }).catch(function (e) { var mm = $(msgId); if (mm) { mm.textContent = 'Could not save: ' + e.message; mm.style.color = 'var(--fail)'; } });
   }
 
   /* ---- Schedule ---- */
   function vSchedule() {
-    var s = S.schedule, ro = S.readOnly, d = ro ? 'disabled' : '';
+    var s = S.schedule, ro = isRO(), rem = !!S.readOnly, d = ro ? 'disabled' : '';
     function opt(v, cur, l) { return '<option value="' + v + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + esc(l || v) + '</option>'; }
     var task = S.task;
     return '<div><h2>Schedule</h2><p class="muted small">How often the full check runs on the test machine. Runs are always the full list, one batch after another.</p></div>' +
-      (ro ? '<div class="note">Read-only copy. Change the schedule on the test machine.</div>' : '') +
+      (ro ? '<div class="note">You can look at the schedule but not change it. Editors can change it here, or on the test machine.</div>' : rem ? '<div class="ok">Saving here updates the test machine within about a minute: the Windows scheduled task, the GitHub repository and this page. Times are UTC+7 (the test machine\'s clock).</div>' : '<div class="ok">Save does everything: Windows Task Scheduler, Cloudflare and GitHub follow by themselves. Times are UTC+7 (this machine\'s clock).</div>') +
       '<div class="card"><div class="row">' +
       '<label class="f">Automatic runs<select id="s-enabled" ' + d + '>' + opt('1', s.enabled ? '1' : '0', 'On') + opt('0', s.enabled ? '1' : '0', 'Off') + '</select></label>' +
       '<label class="f">Frequency<select id="s-mode" ' + d + '>' + opt('daily', s.mode, 'Every day') + opt('weekly', s.mode, 'Every week') + opt('everyNDays', s.mode, 'Every N days') + '</select></label>' +
@@ -403,24 +443,24 @@ svg.chart{width:100%;height:150px}
       '<label class="f">Batches<input type="text" id="s-batches" value="' + esc(s.batches) + '" style="width:110px" placeholder="all or 1,2" ' + d + '></label>' +
       '<label class="f">Mail the result<select id="s-mail" ' + d + '>' + opt('1', s.mail ? '1' : '0', 'Yes') + opt('0', s.mail ? '1' : '0', 'No') + '</select></label>' +
       '</div><p class="small" id="s-desc"><b>' + esc(s.description) + '</b></p>' +
-      '<div class="row"><button class="primary" id="s-save" ' + d + '>Save schedule</button><button id="s-apply" ' + d + ' title="Creates or updates the Windows scheduled task \'Theme check\'">Apply to Windows Task Scheduler</button><button class="danger" id="s-remove" ' + d + '>Remove the scheduled task</button><span id="s-msg" class="small muted"></span></div>' +
-      '<p class="small muted">Saved is only the setting. <b>Apply</b> registers it with Windows, and the PC must be on and the saved Shopify login valid at that time. ' + (task && task.registered ? 'Task is registered. Next run: ' + esc(task.nextRun || '?') + '. Last result: ' + esc(task.lastResult || '?') + '.' : 'No Windows task registered yet.') + '</p></div>' +
-      '<div class="card"><h3>Run now</h3><div class="row"><label class="f">Environment<select id="r-env" ' + d + '>' + S.envs.map(function (e) { return opt(e, s.env); }).join('') + '</select></label>' +
+      '<div class="row"><button class="primary" id="s-save" ' + d + '>Save schedule</button>' + (rem ? '' : '<button class="danger" id="s-remove" ' + d + '>Remove the scheduled task</button>') + '<span id="s-msg" class="small muted"></span></div><div id="save-steps"></div>' +
+      '<p class="small muted">The PC must be on, and the saved Shopify login valid, at the scheduled time. ' + (task && task.registered ? 'Task is registered. Next run: ' + esc(task.nextRun || '?') + '. Last result: ' + esc(task.lastResult || '?') + '.' : 'No Windows task registered yet.') + '</p></div>' +
+      (rem ? '' : '<div class="card"><h3>Run now</h3><div class="row"><label class="f">Environment<select id="r-env" ' + d + '>' + S.envs.map(function (e) { return opt(e, s.env); }).join('') + '</select></label>' +
       '<label class="f">Batches<input type="text" id="r-batches" value="all" style="width:110px" ' + d + '></label>' +
       '<label class="f">Mail<select id="r-mail" ' + d + '>' + opt('0', '0', 'No') + opt('1', '0', 'Yes') + '</select></label>' +
-      '<button class="primary" id="r-go" ' + (ro || S.running ? 'disabled' : '') + '>Start a run</button><span id="r-msg" class="small muted">' + (S.running ? 'A run is in progress (started ' + esc(S.running.startedAt) + ').' : '') + '</span></div>' +
-      '<p class="small muted">A run opens Chrome windows on this machine and takes hours for the full list. Keep the PC awake and do not use the Shopify admin in that Chrome profile meanwhile.</p><pre id="r-log" class="hide"></pre></div>';
+      '<button class="primary" id="r-go" ' + (ro || S.running ? 'disabled' : '') + '>Start a run</button><span id="r-msg" class="small muted">' + (S.running ? 'A run is in progress (started ' + esc(tsLocal(S.running.startedAt)) + ' UTC+7' + ').' : '') + '</span></div>' +
+      '<p class="small muted">A run opens Chrome windows on this machine and takes hours for the full list. Keep the PC awake and do not use the Shopify admin in that Chrome profile meanwhile.</p><pre id="r-log" class="hide"></pre></div>') + '</div>';
   }
   function bindSchedule() {
-    if (S.readOnly) return;
+    if (isRO()) return;
     function val() {
       return { enabled: $('s-enabled').value === '1', mode: $('s-mode').value, weekday: $('s-weekday').value, everyDays: +$('s-n').value, time: $('s-time').value, env: $('s-env').value, batches: $('s-batches').value.trim() || 'all', mail: $('s-mail').value === '1' };
     }
     function vis() { $('w-day').classList.toggle('hide', $('s-mode').value !== 'weekly'); $('w-n').classList.toggle('hide', $('s-mode').value !== 'everyNDays'); }
     vis(); $('s-mode').onchange = vis;
     function msg(t, bad) { $('s-msg').textContent = t; $('s-msg').style.color = bad ? 'var(--fail)' : 'var(--pass)'; }
-    $('s-save').onclick = function () { api('PUT', '/api/schedule', val()).then(function (r) { $('s-desc').innerHTML = '<b>' + esc(r.description) + '</b>'; msg('Saved. Press Apply to register it with Windows.'); }).catch(function (e) { msg(e.message, true); }); };
-    $('s-apply').onclick = function () { api('PUT', '/api/schedule', val()).then(function () { return api('POST', '/api/schedule/apply'); }).then(function (r) { r.ok ? msg('Applied. ' + (r.message || '')) : msg(r.error || 'Failed', true); return load(); }).catch(function (e) { msg(e.message, true); }); };
+    $('s-save').onclick = function () { saveConfig({ schedule: val() }, 's-msg', function (r) { if (r && r.description) $('s-desc').innerHTML = '<b>' + esc(r.description) + '</b>'; return load(); }); };
+    if (S.readOnly) return; // the rest only exists on the test machine itself
     $('s-remove').onclick = function () { if (confirm('Remove the Windows scheduled task? Automatic runs stop.')) api('POST', '/api/schedule/remove').then(function (r) { r.ok ? msg(r.message) : msg(r.error, true); return load(); }); };
     $('r-go').onclick = function () {
       if (!confirm('Start a full run now? It opens Chrome and takes hours.')) return;

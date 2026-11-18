@@ -68,7 +68,7 @@ svg.chart{width:100%;height:150px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.pulse{animation:none}}
 .pbar{height:14px;background:var(--na-bg);border-radius:8px;overflow:hidden}.pbar i{display:block;height:100%;background:var(--accent);transition:width .6s}
-.st-queued{background:var(--na-bg);color:var(--na)}.st-installing,.st-setup{background:var(--warn-bg);color:var(--warn)}.st-testing{background:var(--accent);color:var(--accent-ink)}.st-done{background:var(--pass-bg);color:var(--pass)}.st-failed{background:var(--fail-bg);color:var(--fail)}
+.st-queued{background:var(--na-bg);color:var(--na)}.st-installing,.st-installed,.st-setup{background:var(--warn-bg);color:var(--warn)}.st-testing{background:var(--accent);color:var(--accent-ink)}.st-done{background:var(--pass-bg);color:var(--pass)}.st-failed{background:var(--fail-bg);color:var(--fail)}
 .log{max-height:300px;overflow:auto;font:12px/1.5 ui-monospace,monospace}.log div{padding:2px 0;border-bottom:1px solid var(--line)}
 @media (max-width:640px){.bar-row{grid-template-columns:90px 1fr 30px}}
 </style>
@@ -301,7 +301,9 @@ svg.chart{width:100%;height:150px}
       '<div class="kpis">' + kpi('Passed so far', P.totals.pass, '', 'good') + kpi('Failed so far', P.totals.fail, '', P.totals.fail ? 'bad' : 'good') + kpi('To review', P.totals.review) + kpi('Not testable', P.totals.na) + kpi('Could not set up', c.failedSetup, '', c.failedSetup ? 'bad' : '') + '</div>' +
       '<div class="card scroll"><h3>Themes</h3><table><thead><tr><th>#</th><th>Theme</th><th>Status</th><th>What it is doing</th><th>Failed</th><th>Passed</th><th>Time</th></tr></thead><tbody>' +
       P.themes.map(function (t, i) {
-        var tm = t.startedAt ? fmt((t.finishedAt ? new Date(t.finishedAt) : Date.now()) - new Date(t.startedAt)) : '-';
+        // only the time the theme is really being set up or tested (waiting for its turn does not count)
+        var act = t.activeMs === undefined ? null : (t.activeMs || 0) + (t.activeSince ? Date.now() - new Date(t.activeSince).getTime() : 0);
+        var tm = act !== null ? (act > 0 ? fmt(act) : '-') : (t.startedAt ? fmt((t.finishedAt ? new Date(t.finishedAt) : Date.now()) - new Date(t.startedAt)) : '-');
         return '<tr><td>' + (i + 1) + '</td><td>' + esc(t.name) + '<div class="small muted">batch ' + esc(t.batch) + '</div></td><td><span class="pill st-' + esc(t.status) + '">' + esc(t.status.toUpperCase()) + '</span></td><td class="small">' + esc(t.step || '') + '</td><td>' + (t.fail ? '<b style="color:var(--fail)">' + t.fail + '</b>' : '0') + '</td><td>' + t.pass + '</td><td>' + tm + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
       '<div class="card"><h3>Recent events (UTC+7)</h3><div class="log">' + (P.events.slice(-25).reverse().map(function (e) { return '<div><span class="muted">' + esc(tsLocal(e.t).slice(11, 19)) + '</span> ' + esc(e.msg) + '</div>'; }).join('') || '<div class="muted">Nothing yet.</div>') + '</div></div>';
@@ -309,12 +311,10 @@ svg.chart{width:100%;height:150px}
   function withCounts(p) {
     if (!p || p.none || !p.themes || p.counts) return p;
     var proc = p.themes.filter(function (t) { return t.status === 'done' || t.status === 'failed'; });
-    var timed = proc.filter(function (t) { return t.status === 'done' && t.startedAt && t.finishedAt; });
     var left = p.themes.length - proc.length;
     p.counts = { total: p.themes.length, done: proc.length, left: left, failedSetup: p.themes.filter(function (t) { return t.status === 'failed'; }).length };
-    if (timed.length && left && p.running) {
-      var avg = timed.reduce(function (a, t) { return a + (new Date(t.finishedAt) - new Date(t.startedAt)); }, 0) / timed.length;
-      p.etaMinutes = Math.round(avg * left / 60000);
+    if (proc.length && left && p.running) {
+      p.etaMinutes = Math.round((Date.now() - new Date(p.startedAt).getTime()) / proc.length * left / 60000);
     } else if (p.etaMinutes === undefined) p.etaMinutes = null;
     return p;
   }

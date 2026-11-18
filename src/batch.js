@@ -162,7 +162,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
       await sleep(delays.afterClean);
       r = await themesApi.installAndFind(ctx, env, t.name, new Set((await themesApi.listThemes(ctx, env)).map((x) => x.id)));
     }
-    if (r.ok) { log(`  ${t.name}: installed (${r.id})`); await sleep(delays.afterInstall); return r.id; }
+    if (r.ok) { prog.setTheme(t.name, { status: 'installed', step: 'Installed, waiting for its turn to be tested' }); log(`  ${t.name}: installed (${r.id})`); await sleep(delays.afterInstall); return r.id; }
     run.themes.push({ name: t.name, passes: [], setupFailed: { reason: r.reason, detail: r.detail } });
     prog.setTheme(t.name, { status: 'failed', step: `install failed: ${r.reason}` });
     log(`  ${t.name}: install failed (${r.reason})`);

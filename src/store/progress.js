@@ -41,7 +41,7 @@ class Progress {
   setPhase(phase, step) { this.s.phase = phase; if (step !== undefined) this.s.step = step; this.save(); }
 
   setThemes(list) {
-    this.s.themes = list.map((t) => ({ name: t.name, batch: t.batch, status: 'queued', step: '', startedAt: null, finishedAt: null, fail: 0, pass: 0, review: 0 }));
+    this.s.themes = list.map((t) => ({ name: t.name, batch: t.batch, status: 'queued', step: '', startedAt: null, finishedAt: null, activeMs: 0, activeSince: null, fail: 0, pass: 0, review: 0 }));
     this.save();
   }
 
@@ -53,6 +53,12 @@ class Progress {
     if (!t) return;
     if (patch.status === 'setup' || patch.status === 'installing') t.startedAt = t.startedAt || new Date().toISOString();
     if (patch.status === 'done' || patch.status === 'failed') t.finishedAt = new Date().toISOString();
+    // the Time column: only the time the theme is really being set up / tested, never the time it waits for its turn
+    if (patch.status) {
+      const active = patch.status === 'setup' || patch.status === 'testing';
+      if (active && !t.activeSince) t.activeSince = new Date().toISOString();
+      if (!active && t.activeSince) { t.activeMs = (t.activeMs || 0) + (Date.now() - new Date(t.activeSince).getTime()); t.activeSince = null; }
+    }
     Object.assign(t, patch);
     this.s.current = patch.status === 'done' || patch.status === 'failed' ? (this.s.current && this.s.current.theme === name ? null : this.s.current) : { theme: name, status: t.status, step: t.step, since: new Date().toISOString() };
     this.save();
@@ -90,12 +96,12 @@ function readProgress(dataDir) {
 // Average time of finished themes x themes left. Only an estimate; null until one theme has finished.
 function withEta(s) {
   const processed = s.themes.filter((t) => t.status === 'done' || t.status === 'failed'); // a theme that could not be set up is also finished
-  const timed = processed.filter((t) => t.status === 'done' && t.startedAt && t.finishedAt); // only fully tested themes say how long one takes
   const left = s.themes.length - processed.length;
   s.counts = { total: s.themes.length, done: processed.length, left, failedSetup: s.themes.filter((t) => t.status === 'failed').length };
-  if (timed.length && left && s.running) {
-    const avg = timed.reduce((a, t) => a + (new Date(t.finishedAt) - new Date(t.startedAt)), 0) / timed.length;
-    s.etaMinutes = Math.round((avg * left) / 60000);
+  // wall-clock pace of the whole run (installs, waits and tests included), so the estimate stays honest
+  if (processed.length && left && s.running) {
+    const elapsed = Date.now() - new Date(s.startedAt).getTime();
+    s.etaMinutes = Math.round((elapsed / processed.length * left) / 60000);
   } else s.etaMinutes = null;
   return s;
 }

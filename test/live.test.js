@@ -27,12 +27,12 @@ test('progress: themes move queued, setup, testing, done; counts and ETA follow'
   assert.strictEqual(s.themes[0].fail, 2);
   assert.strictEqual(s.counts.done, 0);
   assert.strictEqual(s.etaMinutes, null, 'no estimate before one theme is finished');
-  p.s.themes[0].startedAt = new Date(Date.now() - 10 * 60000).toISOString();
+  p.s.startedAt = new Date(Date.now() - 20 * 60000).toISOString(); // the run started 20 min ago
   p.setTheme('Dawn', { status: 'done', step: 'finished' });
   s = readProgress(dir);
   assert.strictEqual(s.counts.done, 1);
   assert.strictEqual(s.counts.left, 2);
-  assert.ok(s.etaMinutes >= 19 && s.etaMinutes <= 21, 'about 10 min x 2 themes left: ' + s.etaMinutes);
+  assert.ok(s.etaMinutes >= 39 && s.etaMinutes <= 41, '20 min for 1 theme, 2 left: ' + s.etaMinutes);
   assert.strictEqual(s.current, null);
   p.finish('completed');
   s = readProgress(dir);

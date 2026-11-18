@@ -20,6 +20,8 @@ const tmpRoot = () => {
   const r = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-cs-'));
   ['config', 'checklist'].forEach((d) => fs.cpSync(path.join(SRC, d), path.join(r, d), { recursive: true }));
   fs.rmSync(path.join(r, 'config', 'config.local.json'), { force: true });
+  fs.rmSync(path.join(r, 'config', '.applied-rev'), { force: true });
+  fs.rmSync(path.join(r, 'config', 'schedule.json'), { force: true });
   return r;
 };
 const CFG = { envs: { staging: {}, prod: {} }, cloudflare: { url: 'https://x.dev' } };
@@ -274,4 +276,26 @@ test('the live page shows event times in UTC+7', async () => {
     assert.match(txt, /Recent events \(UTC\+7\)/);
     await page.close();
   } finally { await browser.close(); srv.close(); }
+});
+
+test('theme time counts only the time it is set up or tested, not waiting for its turn', async () => {
+  const { Progress } = require('../src/store/progress');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-time-'));
+  const p = new Progress(dir, { runId: 'r', env: 'staging' });
+  p.setThemes([{ name: 'A', batch: 1 }, { name: 'B', batch: 1 }]);
+  p.setTheme('A', { status: 'installing', step: 'x' });
+  p.setTheme('A', { status: 'installed', step: 'waiting' });
+  await new Promise((r) => setTimeout(r, 150)); // waiting: must not count
+  assert.strictEqual(p.theme('A').activeMs, 0);
+  assert.strictEqual(p.theme('A').activeSince, null);
+  const t0 = Date.now();
+  p.setTheme('A', { status: 'setup', step: 'tab 1' });
+  await new Promise((r) => setTimeout(r, 120));
+  p.setTheme('A', { status: 'testing', step: 'checking' }); // setup -> testing keeps one running clock
+  await new Promise((r) => setTimeout(r, 120));
+  p.setTheme('A', { status: 'done', step: 'finished' });
+  const ms = p.theme('A').activeMs, wall = Date.now() - t0;
+  assert.ok(ms >= 200 && ms <= wall + 5, 'active time ' + ms + ' vs ' + wall + ' ms of work');
+  assert.strictEqual(p.theme('A').activeSince, null);
+  assert.strictEqual(p.theme('B').activeMs, 0, 'a queued theme has no time');
 });

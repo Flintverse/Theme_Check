@@ -6,6 +6,7 @@ const cfgLib = require('./config');
 const sched = require('./schedule');
 const { runsDir, dataDir } = require('./store/paths');
 const { themeStatus } = require('./store/tracker');
+const { loadLibraries } = require('./admin/library');
 
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return d; } };
 
@@ -34,6 +35,7 @@ function buildState(root, cfg) {
     runs: readJson(path.join(data, 'runs.json'), []),
     issues,
     themeStatus: themeStatus(issues),
+    library: loadLibraries(root, cfg),
     checklist: cfgLib.loadChecklist(root).items.map((i) => ({ id: i.id, title: i.title, severity: i.severity })),
     publishedAt: new Date().toISOString(),
   };

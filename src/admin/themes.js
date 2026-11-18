@@ -4,29 +4,47 @@ const fs = require('fs');
 const path = require('path');
 const { showWindow, norm, esc } = require('../lib/browser');
 
+const BOT = /verify you are human|connection needs to be verified/i;
+
+async function readLibraryOnce(page) {
+  const found = new Map();
+  for (const f of page.frames()) {
+    const html = await f.content().catch(() => '');
+    for (const m of html.matchAll(/\/themes\/(\d{10,})/g)) if (!found.has(m[1])) found.set(m[1], { id: m[1], name: '' });
+    const rows = await f.$$eval('a[href*="/editor"]', (as) => as.map((a) => ({ href: a.href, label: a.getAttribute('aria-label') || '', alt: (a.querySelector('img') && a.querySelector('img').alt) || '' }))).catch(() => []);
+    rows.forEach((r) => {
+      const m = r.href.match(/\/themes\/(\d+)\/editor/);
+      if (!m) return;
+      if (r.label === 'Edit theme') { const cur = found.get(m[1]) || { id: m[1], name: '' }; cur.live = true; found.set(m[1], cur); return; }
+      const name = (r.label.replace(/^Edit /, '') || r.alt.replace(/^Theme preview thumbnail for /, '')).trim();
+      if (name && !/^Theme preview screenshot$/.test(name)) { const cur = found.get(m[1]) || { id: m[1], name: '' }; cur.name = name; found.set(m[1], cur); }
+    });
+  }
+  return found;
+}
+
 // Every theme in the library: { id, name }. Ids come from the page HTML (reliable); names from the "Edit <name>" links.
+// The page fills in over several seconds, so read it until two reads in a row agree. A robot check page is an error,
+// never an empty library (an empty library would make the caller install themes it already has).
 async function listThemes(ctx, env) {
   const page = await ctx.newPage();
-  await page.goto(`https://admin.shopify.com/store/${env.adminHandle}/themes`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await showWindow(ctx, page);
-  await page.waitForTimeout(7000);
-  const found = new Map();
-  for (let i = 0; i < 8 && found.size === 0; i++) {
-    for (const f of page.frames()) {
-      const html = await f.content().catch(() => '');
-      for (const m of html.matchAll(/\/themes\/(\d{10,})/g)) if (!found.has(m[1])) found.set(m[1], { id: m[1], name: '' });
-      const rows = await f.$$eval('a[href*="/editor"]', (as) => as.map((a) => ({ href: a.href, label: a.getAttribute('aria-label') || '', alt: (a.querySelector('img') && a.querySelector('img').alt) || '' }))).catch(() => []);
-      rows.forEach((r) => {
-        const m = r.href.match(/\/themes\/(\d+)\/editor/);
-        if (!m) return;
-        const name = (r.label.replace(/^Edit /, '') || r.alt.replace(/^Theme preview thumbnail for /, '')).trim();
-        if (name && !/^Theme preview screenshot$/.test(name)) found.set(m[1], { id: m[1], name });
-      });
+  try {
+    await page.goto(`https://admin.shopify.com/store/${env.adminHandle}/themes`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await showWindow(ctx, page);
+    await page.waitForTimeout(6000);
+    let prev = '';
+    let last = new Map();
+    for (let i = 0; i < 10; i++) {
+      const text = await page.locator('body').innerText().catch(() => '');
+      if (BOT.test(text)) throw new Error('Shopify showed a robot check ("Verify you are human") instead of the themes page. Run: node src/cli.js login --env <env> (visible window), pass the check, and run again.');
+      last = await readLibraryOnce(page);
+      const sig = Array.from(last.values()).map((x) => x.id + ':' + x.name).sort().join('|');
+      if (last.size > 0 && sig === prev) break;
+      prev = sig;
+      await page.waitForTimeout(3000);
     }
-    if (found.size === 0) await page.waitForTimeout(2000);
-  }
-  await page.close();
-  return Array.from(found.values());
+    return Array.from(last.values());
+  } finally { await page.close().catch(() => {}); }
 }
 
 async function installTheme(ctx, env, name) {
@@ -57,41 +75,77 @@ async function installTheme(ctx, env, name) {
   } finally { await page.close().catch(() => {}); }
 }
 
-// Install, then find the new theme id in the library.
+// Install, then find the new theme id. Only a theme NAMED like the one asked for counts: never "whatever is new in the list".
 async function installAndFind(ctx, env, name, before) {
   const inst = await installTheme(ctx, env, name);
   if (!inst.ok) return inst;
   for (let i = 0; i < 4; i++) {
     const lib = await listThemes(ctx, env);
-    const fresh = lib.filter((t) => !before.has(t.id));
+    const fresh = lib.filter((t) => !before.has(t.id) && t.name && norm(t.name) === norm(name));
     if (fresh.length) return { ok: true, id: fresh[0].id };
+    await new Promise((r) => setTimeout(r, 5000));
   }
-  return { ok: false, reason: 'installed_but_not_found' };
+  return { ok: false, reason: 'installed_but_not_found', detail: `No new theme named "${name}" appeared in the library.` };
 }
 
-// NEW, uncalibrated: Themes page > theme card "..." > Delete theme > confirm. Shopify itself refuses to delete the live theme; the caller never passes it.
+// Themes page > the theme row's "Click for more theme actions" > Delete > confirm in the modal (which lives in its own frame).
+// Shopify itself refuses to delete the live theme; the caller never passes it. Returns { ok } or { ok:false, reason }.
 async function deleteTheme(ctx, env, id, debugDir) {
   const page = await ctx.newPage();
   try {
     await page.goto(`https://admin.shopify.com/store/${env.adminHandle}/themes`, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await showWindow(ctx, page);
-    await page.waitForTimeout(6000);
+    await page.waitForTimeout(7000);
     for (const f of page.frames()) {
-      const card = f.locator(`a[href*="/themes/${id}"]`).first();
-      if (!(await card.count().catch(() => 0))) continue;
-      const scope = card.locator('xpath=ancestor::*[.//button][1]');
-      const more = scope.getByRole('button', { name: /more actions|actions|\.\.\.|…/i }).first();
-      await more.click({ timeout: 8000 });
-      await f.getByRole('menuitem', { name: /^delete/i }).first().click({ timeout: 8000 });
-      await f.getByRole('button', { name: /^delete$/i }).last().click({ timeout: 8000 });
-      await page.waitForTimeout(5000);
-      return { ok: true };
+      const link = f.locator(`a[href*="/themes/${id}/editor"]`).first();
+      if (!(await link.count().catch(() => 0))) continue;
+      const row = link.locator('xpath=ancestor::*[.//button[@aria-label="Click for more theme actions"]][1]');
+      await row.locator('button[aria-label="Click for more theme actions"]').first().click({ timeout: 8000 });
+      await page.waitForTimeout(800);
+      await row.getByText(/^Delete$/).first().click({ timeout: 8000 });
+      // the confirmation modal: a frame that has both Cancel and Delete buttons
+      let confirmBtn = null;
+      for (let i = 0; i < 20 && !confirmBtn; i++) {
+        for (const fr of page.frames()) {
+          const cancel = await fr.getByRole('button', { name: /^Cancel$/ }).count().catch(() => 0);
+          const del = fr.getByRole('button', { name: /^Delete$/ });
+          if (cancel && (await del.count().catch(() => 0))) { confirmBtn = del.last(); break; }
+        }
+        if (!confirmBtn) await page.waitForTimeout(500);
+      }
+      if (!confirmBtn) return { ok: false, reason: 'delete_confirm_not_found' };
+      await confirmBtn.click({ timeout: 8000 });
+      // prove it is gone
+      for (let i = 0; i < 20; i++) {
+        await page.waitForTimeout(1500);
+        let still = false;
+        for (const fr of page.frames()) if (await fr.locator(`a[href*="/themes/${id}/editor"]`).count().catch(() => 0)) still = true;
+        if (!still) return { ok: true };
+      }
+      return { ok: false, reason: 'delete_not_confirmed_by_page' };
     }
     return { ok: false, reason: 'theme_not_on_page' };
   } catch (e) {
     if (debugDir) { fs.mkdirSync(debugDir, { recursive: true }); await page.screenshot({ path: path.join(debugDir, `delete-${id}.png`) }).catch(() => {}); }
-    return { ok: false, reason: 'delete_failed', detail: String(e.message).slice(0, 200) };
+    return { ok: false, reason: 'delete_failed', detail: String(e.message).split(/[\r\n]/)[0].slice(0, 200) };
   } finally { await page.close().catch(() => {}); }
 }
 
-module.exports = { listThemes, installTheme, installAndFind, deleteTheme, norm };
+// The themes page shows the live theme and at most 5 draft themes, newest first, so a store with more themes needs
+// several passes: delete what is shown, read again, until only the live theme is left. The live theme is never touched.
+async function cleanDrafts(ctx, env, log, debugDir) {
+  let deleted = 0;
+  const failed = new Set();
+  for (let pass = 0; pass < 12; pass++) {
+    const lib = await listThemes(ctx, env);
+    const drafts = lib.filter((t) => !t.live && !failed.has(t.id));
+    if (!drafts.length) break;
+    for (const t of drafts) {
+      const r = await deleteTheme(ctx, env, t.id, debugDir);
+      if (r.ok) { deleted++; log('  deleted ' + (t.name || t.id)); } else { failed.add(t.id); log('  could not delete ' + (t.name || t.id) + ': ' + r.reason); }
+    }
+  }
+  return { deleted, failed: Array.from(failed) };
+}
+
+module.exports = { cleanDrafts, listThemes, installTheme, installAndFind, deleteTheme, norm };

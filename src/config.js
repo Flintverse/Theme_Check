@@ -23,7 +23,8 @@ function cleanThemes(list) {
     const name = String(t.name || '').replace(/\s+/g, ' ').trim().slice(0, 60);
     if (!name || /[<>"\\]/.test(name) || seen.has(name.toLowerCase())) return;
     seen.add(name.toLowerCase());
-    out.push({ name, batch: Math.max(1, parseInt(t.batch, 10) || 1), enabled: t.enabled !== false });
+    const envs = Array.isArray(t.envs) ? Array.from(new Set(t.envs.filter((e) => /^[a-z0-9_-]{1,20}$/i.test(String(e))))) : ['staging', 'prod'];
+    out.push({ name, envs: envs.length ? envs : ['staging', 'prod'], batch: Math.max(1, parseInt(t.batch, 10) || 1), enabled: t.enabled !== false });
   });
   return out;
 }
@@ -42,4 +43,10 @@ function autoBatch(list, size) {
   return list.map((t) => (t.enabled === false ? Object.assign({}, t) : Object.assign({}, t, { batch: Math.floor(n++ / size) + 1 })));
 }
 
-module.exports = { loadConfig, loadChecklist, loadThemes, saveThemes, cleanThemes, autoBatch };
+// The themes to test in one environment, in list order, in batches of `size` (a store holds at most 20 themes).
+function themesForEnv(list, env, size) {
+  const picked = list.filter((t) => t.enabled !== false && (!t.envs || t.envs.includes(env)));
+  return picked.map((t, i) => Object.assign({}, t, { batch: Math.floor(i / (size || 10)) + 1 }));
+}
+
+module.exports = { themesForEnv, loadConfig, loadChecklist, loadThemes, saveThemes, cleanThemes, autoBatch };

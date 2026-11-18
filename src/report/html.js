@@ -42,7 +42,8 @@ td.c{text-align:center;font:600 12px ui-monospace,monospace}
 .scroll{overflow-x:auto}
 details.ev{border-top:1px solid var(--line);padding-top:8px;margin-top:6px}
 summary{cursor:pointer;font:500 13px ui-monospace,monospace;color:var(--accent)}
-.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:10px}
+.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:10px}
+video.ev{width:100%;max-width:560px;border:1px solid var(--line);border-radius:8px;background:#000;display:block;margin-top:8px}
 figure{margin:0}
 figure img{width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
 figcaption{font:12px ui-monospace,monospace;color:var(--muted)}
@@ -96,8 +97,8 @@ function render(run, checklist, prevRun) {
     const status = bad ? 'fail' : rs.some((r) => r.status === 'review') ? 'review' : rs.every((r) => r.status === 'na') ? 'na' : 'pass';
     const lines = rs.slice().sort((a, b) => (FAIL(b.status) ? 1 : 0) - (FAIL(a.status) ? 1 : 0)).map((r) => {
       const shots = (r.shots || []).map((s) => `<figure><a href="${esc(s)}"><img loading="lazy" src="${esc(s)}" alt=""></a><figcaption>${esc(s.split('/').slice(-1)[0])}</figcaption></figure>`).join('');
-      const vid = r.video && FAIL(r.status) ? `<div><a href="${esc(r.video)}">Video of this pass (${esc(r.layout)})</a></div>` : '';
-      const ev = shots || vid ? `<details class="ev"><summary>evidence</summary>${vid}<div class="shots">${shots}</div></details>` : '';
+      const vid = r.video && FAIL(r.status) ? `<video class="ev" controls preload="metadata" src="${esc(r.video)}"></video>` : '';
+      const ev = shots || vid ? `<div class="shots">${shots}</div>${vid}` : '';
       return `<tr><td>${esc(r.theme)}</td><td>${esc(r.layout)}</td><td>${pill(r.status)}${chg(r.change)}</td><td>${esc(r.detail)}${ev}</td></tr>`;
     }).join('');
     return `<section class="card r-${status}" id="${esc(id)}"><div class="h"><span class="cid">${esc(id)}</span>${pill(status)}<span class="refs">${esc(m.area || '')} | ${esc(m.severity)} | ${esc(m.mode || '')}</span></div><h3>${esc(m.title)}</h3>

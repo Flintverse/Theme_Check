@@ -12,17 +12,19 @@ class LoginRequired extends Error {
 
 const profileDirFor = (root, env) => path.join(root, `.profile-${env}`);
 
-// headless = true is the normal mode: Chrome runs with no window at all, so nothing pops up on the screen and no focus is
-// taken from what the person is doing. Pass false (the --show flag) only to watch or to log in.
-async function openAdmin(profileDir, headless) {
+// Window modes (second argument):
+//   'quiet'    (default for runs)  a real Chrome window placed far off-screen: nothing is visible and nothing is raised.
+//                                  Pure headless is NOT used by default: Shopify's Cloudflare shows a "Verify you are human" check to it.
+//   'headless' no window at all (--headless flag; may hit that robot check)
+//   'show'     a normal visible window (login, --show)
+// true / false are accepted for older callers: true = 'quiet', false = 'show'.
+async function openAdmin(profileDir, mode) {
+  const m = mode === true ? 'quiet' : mode === false ? 'show' : (mode || 'quiet');
   fs.mkdirSync(profileDir, { recursive: true });
-  const ctx = await chromium.launchPersistentContext(profileDir, {
-    channel: 'chrome',
-    headless,
-    viewport: { width: 1400, height: 950 },
-    args: ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-features=CalculateNativeWinOcclusion'],
-  });
-  ctx._tcHeadless = !!headless;
+  const args = ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-features=CalculateNativeWinOcclusion'];
+  if (m === 'quiet') args.push('--window-position=-2400,-2400', '--window-size=1400,950');
+  const ctx = await chromium.launchPersistentContext(profileDir, { channel: 'chrome', headless: m === 'headless', viewport: { width: 1400, height: 950 }, args });
+  ctx._tcQuiet = m !== 'show';
   return ctx;
 }
 
@@ -39,9 +41,9 @@ async function loginFlow(profileDir, handle) {
   console.log(`Login saved in ${profileDir}`);
 }
 
-// A minimised window renders nothing (screenshots hang): restore it and bring the page forward.
+// Visible mode only: a minimised window renders nothing (screenshots hang), so restore it and bring the page forward.
 async function showWindow(ctx, page) {
-  if (ctx._tcHeadless) return; // background mode: never restore or raise a window
+  if (ctx._tcQuiet) return; // background modes: never restore or raise a window
   try {
     const cdp = await ctx.newCDPSession(page);
     const { windowId } = await cdp.send('Browser.getWindowForTarget');

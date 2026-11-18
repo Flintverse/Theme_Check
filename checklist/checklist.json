@@ -479,6 +479,22 @@
       "title": "The layout on screen is the layout that was set",
       "steps": "Set the Filter layout in Tab 1, Save, reload Tab 3.",
       "expected": "The page shows that layout (otherwise the other results do not mean anything)."
+    },
+    {
+      "id": "G-05",
+      "area": "General",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas",
+        "mobile"
+      ],
+      "title": "The storefront preview opens (no password page)",
+      "steps": "Open Preview from the theme editor (Tab 3).",
+      "expected": "The theme opens; a store password page would make every other result meaningless, so the theme is stopped with this one failure."
     }
   ]
 }

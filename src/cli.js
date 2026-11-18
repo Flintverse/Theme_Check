@@ -7,6 +7,7 @@
  *                                                     no admin: run the checklist on one storefront URL
  * node src/cli.js report --run 2026-11-18-staging      rebuild report.html from results.json
  * node src/cli.js mail   --run 2026-11-18-staging [--dry]  send (or print) the Gmail summary
+ * node src/cli.js library --env staging              read the store's theme library and compare it with the theme list
  * node src/cli.js sync   [--run <id>] [--all]          push dashboard data (and reports) to the Cloudflare monitor
  * node src/cli.js ui     [--port 4173]                 local dashboard: themes, schedule, run now, history, issue tracker
  * node src/cli.js publish [--out site] [--with-videos] [--dashboard-only]   read-only copy of the dashboard for a static host
@@ -74,16 +75,15 @@ async function doMail(cfg, runId, dry) {
     const { runBatches } = require('./batch');
     const monitor = require('./monitor').forRun(ROOT, cfg);
     const envName = args.env || 'staging';
-    let list = loadThemes().filter((t) => t.enabled !== false);
+    let list = require('./config').themesForEnv(loadThemes(), envName, 10);
     if (args.batches) { const b = String(args.batches).split(',').map(Number); list = list.filter((t) => b.includes(t.batch)); }
     if (args.themes) {
       const want = String(args.themes).split(',').map((s) => s.trim().toLowerCase());
-      list = list.filter((t) => want.includes(t.name.toLowerCase()));
-      list.forEach((t) => { t.batch = 1; }); // an explicit list runs as one batch
+      list = require('./config').themesForEnv(list.filter((t) => want.includes(t.name.toLowerCase())), envName, 10); // an explicit list is batched by 10 too
     }
     if (!list.length) throw new Error('No themes selected (check --batches / --themes against config/themes.json).');
     console.log(`Config: ${cfg._file} | env: ${envName} | themes: ${list.length}`);
-    const { run, runDir } = await runBatches({ root: ROOT, cfg, envName, themeList: list, checklist: loadChecklist(), opts: { skipClean: !!args['skip-clean'], skipWait: !!args['skip-wait'], show: !!args.show, onProgress: monitor.onProgress, onFinish: monitor.onFinish } });
+    const { run, runDir } = await runBatches({ root: ROOT, cfg, envName, themeList: list, checklist: loadChecklist(), opts: { skipClean: !!args['skip-clean'], skipWait: !!args['skip-wait'], keepThemes: !!args['keep-themes'], show: !!args.show, headless: !!args.headless, onProgress: monitor.onProgress, onFinish: monitor.onFinish } });
     console.log(`\nReport: ${path.join(runDir, 'report.html')}`);
     if (args.mail || args['dry-mail']) await doMail(cfg, run.runId, !!args['dry-mail']);
     return;
@@ -107,6 +107,25 @@ async function doMail(cfg, runId, dry) {
     const prev = findPrevious(runsDir(ROOT, cfg), run.env, run.runId);
     fs.writeFileSync(path.join(dir, 'report.html'), render(run, loadChecklist(), prev));
     console.log(`Rebuilt ${path.join(dir, 'report.html')}`);
+    return;
+  }
+
+  if (cmd === 'library') {
+    const envName = args.env || 'staging';
+    const env = cfg.envs[envName];
+    if (!env) throw new Error('Unknown env ' + envName);
+    const { openAdmin, profileDirFor } = require('./lib/browser');
+    const themesApi = require('./admin/themes');
+    const lib = require('./admin/library');
+    const ctx = await openAdmin(profileDirFor(ROOT, envName), args.show ? 'show' : 'quiet');
+    let live;
+    try { live = await themesApi.listThemes(ctx, env); } finally { await ctx.close().catch(() => {}); }
+    const wanted = require('./config').themesForEnv(loadThemes(), envName, 10);
+    const r = lib.saveLibrary(ROOT, cfg, envName, wanted, live);
+    console.log(envName + ': ' + r.wanted + ' themes wanted, ' + r.inStore + ' in the store library');
+    console.log('  present (' + r.present.length + '): ' + r.present.map((p) => p.name + (p.ids.length > 1 ? ' x' + p.ids.length : '')).join(', '));
+    console.log('  missing (' + r.missing.length + '): ' + r.missing.join(', '));
+    console.log('  other themes in the store: ' + (r.extras.map((e) => e.name).join(', ') || 'none'));
     return;
   }
 

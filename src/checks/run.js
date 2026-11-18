@@ -40,14 +40,30 @@ class Pass {
   }
 }
 
-async function load(page, url) {
+// A development store (or any store with a storefront password) shows a password page instead of the theme.
+const GATE = 'form[action*="/password"] input[type=password], input[name="password"][type=password]';
+async function onGate(page) { return page.evaluate((sel) => !!document.querySelector(sel), GATE).catch(() => false); }
+
+async function passGate(page, url, password) {
+  if (!(await onGate(page))) return { blocked: false };
+  if (!password) return { blocked: true, reason: 'The storefront shows the store password page and no storefront password is configured (config.local.json: envs.<env>.storefrontPassword, or the STOREFRONT_PASSWORD_<ENV> variable).' };
+  await page.fill(GATE, password);
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}), page.locator('form[action*="/password"] button, form[action*="/password"] input[type=submit]').first().click()]);
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  if (await onGate(page)) return { blocked: true, reason: 'The storefront password was entered but the password page is still showing (wrong password?).' };
+  return { blocked: false };
+}
+
+async function load(page, url, password) {
   const t0 = Date.now();
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  const gate = await passGate(page, url, password);
+  if (gate.blocked) return { ms: Date.now() - t0, blocked: gate.reason };
   await page.waitForSelector('#fdt-container', { timeout: 15000 }).catch(() => {});
   await page.waitForSelector('.search-filters__product-item', { state: 'visible', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1800);
   await page.addStyleTag({ content: HIDE_PREVIEW_BAR }).catch(() => {});
-  return Date.now() - t0;
+  return { ms: Date.now() - t0, blocked: null };
 }
 
 async function openDrawer(page) {
@@ -320,7 +336,7 @@ async function searchPass(p, c) {
 }
 
 // One pass = one fresh context (so it can have its own video), one set of results.
-async function runPass({ browser, url, layout, viewportName, viewport, outDir, relDir, thresholds, keyword, videoDir }) {
+async function runPass({ browser, url, layout, viewportName, viewport, outDir, relDir, thresholds, keyword, videoDir, password, cookies }) {
   const mobile = viewportName === 'mobile';
   const ctx = await browser.newContext({
     viewport,
@@ -328,15 +344,19 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
     hasTouch: mobile,
     userAgent: mobile ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' : undefined,
     recordVideo: videoDir ? { dir: videoDir, size: { width: viewport.width, height: viewport.height } } : undefined,
+    // the preview session of the editor (see editor.getPreviewUrl): lets a draft theme or a password store open
+    storageState: cookies && cookies.length ? { cookies, origins: [] } : undefined,
   });
   const page = await ctx.newPage();
   const c = collectors(page);
   const p = new Pass({ page, outDir, relDir, layout, viewport: viewportName, thresholds, keyword });
   let video = null;
+  let blocked = null;
   try {
-    const ms = await load(page, url);
-    p.firstCardMs = ms;
-    if (layout === 'search') await searchPass(p, c);
+    const loaded = await load(page, url, password);
+    p.firstCardMs = loaded.ms;
+    if (loaded.blocked) { p.add('G-05', 'fail', loaded.blocked, [await p.shot('storefront-blocked')]); blocked = loaded.blocked; }
+    else if (layout === 'search') await searchPass(p, c);
     else if (mobile) await mobilePass(p, c);
     else await desktopPass(p, c);
   } catch (e) {
@@ -352,7 +372,7 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
     if (failed) { videoRel = `${relDir}/video.webm`; fs.mkdirSync(path.join(outDir, relDir), { recursive: true }); fs.renameSync(video, path.join(outDir, videoRel)); }
     else fs.unlinkSync(video);
   }
-  return { layout, viewport: viewportName, results: p.results, video: videoRel };
+  return { layout, viewport: viewportName, results: p.results, video: videoRel, blocked };
 }
 
 module.exports = { runPass, load, collectors, changedRatio };

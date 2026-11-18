@@ -9,6 +9,7 @@ const sched = require('./schedule');
 const { archiveRoot, runsDir, dataDir } = require('./store/paths');
 const { themeStatus } = require('./store/tracker');
 const { readProgress } = require('./store/progress');
+const { loadLibraries } = require('./admin/library');
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.json': 'application/json', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webm': 'video/webm', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8' };
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return d; } };
@@ -30,6 +31,7 @@ function createServer(root, opts) {
       runs: readJson(path.join(data, 'runs.json'), []),
       issues: readJson(path.join(data, 'issues.json'), { items: {} }),
       themeStatus: themeStatus(readJson(path.join(data, 'issues.json'), { items: {} })),
+      library: loadLibraries(root, cfg),
       checklist: cfgLib.loadChecklist(root).items.map((i) => ({ id: i.id, title: i.title, severity: i.severity })),
       archiveDir: archiveRoot(root, cfg),
       running: current ? { startedAt: current.startedAt, args: current.args } : null,

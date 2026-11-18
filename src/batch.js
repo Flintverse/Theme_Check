@@ -15,6 +15,7 @@ const { dataDir } = require('./store/paths');
 const { Progress } = require('./store/progress');
 
 const LAYOUTS = ['vertical', 'horizontal', 'offcanvas'];
+const envName = (env) => String(env.adminHandle || '').toUpperCase().replace(/[^A-Z0-9]/g, '_');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(0, 10);
 
@@ -30,7 +31,12 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
   const outDir = runDir;
   let ed = null;
   const step = (status, text) => { prog.setTheme(theme.name, { status, step: text }); };
-  const add = (pass) => { out.passes.push(pass); prog.addResults(theme.name, pass.results); };
+  const add = (pass) => {
+    out.passes.push(pass);
+    prog.addResults(theme.name, pass.results);
+    // a blocked storefront makes every later result meaningless: stop this theme with ONE clear failure
+    if (pass.blocked) throw Object.assign(new Error(pass.blocked), { reason: 'storefront_blocked' });
+  };
   try {
     // ---- Tab 1: Vertical first
     step('setup', 'Tab 1: setting the Vertical layout');
@@ -53,7 +59,7 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
     prog.event(`${theme.name}: Tab 3 opened via ${prev.via}`);
     add({ layout: 'panel', viewport: 'desktop', results: [panel], video: null });
 
-    const common = { browser, url: prev.url, outDir, thresholds: cfg.thresholds, keyword: cfg.keyword };
+    const common = { browser, url: prev.url, outDir, thresholds: cfg.thresholds, keyword: cfg.keyword, cookies: prev.cookies, password: env.storefrontPassword || process.env[`STOREFRONT_PASSWORD_${envName(env)}`] };
     for (const layout of LAYOUTS) {
       log(`  ${theme.name}: layout ${layout}`);
       if (layout !== 'vertical') { step('setup', `Tab 1: switching to ${layout}, then reloading Tab 3`); await design.setLayout(designPage, layout); }
@@ -71,7 +77,7 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
     step('testing', 'Checking search suggestion (mobile)');
     add(await runPass(Object.assign({}, common, { layout: 'search', viewportName: 'mobile', viewport: cfg.viewports.mobile, relDir: `${key}/search-mobile`, videoDir: path.join(outDir, '_video') })));
   } catch (e) {
-    out.setupFailed = out.setupFailed || { reason: 'theme_run_failed', detail: String(e.message).slice(0, 240) };
+    out.setupFailed = out.setupFailed || { reason: e.reason || 'theme_run_failed', detail: String(e.message).slice(0, 240) };
   } finally {
     // end of each theme: Tab 1 back to Vertical, Tab 2 Exit
     prog.setTheme(theme.name, { step: 'Tab 1: putting the layout back to Vertical, leaving the editor' });
@@ -80,6 +86,12 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
   }
   prog.setTheme(theme.name, out.setupFailed ? { status: 'failed', step: `${out.setupFailed.reason}: ${out.setupFailed.detail || ''}`.slice(0, 160) } : { status: 'done', step: 'finished' });
   return out;
+}
+
+// The browser was closed in the finally block above, so open a short one just to clean up.
+async function cleanAtEnd(root, cfg, envName, runDir, log) {
+  const ctx = await openAdmin(profileDirFor(root, envName), 'quiet');
+  try { const c = await themesApi.cleanDrafts(ctx, cfg.envs[envName], log, path.join(runDir, '_debug')); log(`  store cleaned at the end: ${c.deleted} draft theme(s) deleted`); } finally { await ctx.close().catch(() => {}); }
 }
 
 async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
@@ -91,7 +103,7 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
   const runDir = path.join(runsDir(root, cfg), runId);
   const prev = findPrevious(runsDir(root, cfg), envName, runId);
   const run = { runId, env: envName, shop: env.shop, startedAt: new Date().toISOString(), themes: [] };
-  const prog = new Progress(dataDir(root, cfg), { runId, env: envName, mode: opts.show ? 'visible windows' : 'background' }, opts.onProgress);
+  const prog = new Progress(dataDir(root, cfg), { runId, env: envName, mode: opts.show ? 'visible windows' : opts.headless ? 'headless' : 'background (off-screen window)' }, opts.onProgress);
   prog.setThemes(themeList);
   const log = (m) => { console.log(m); prog.event(String(m).trim()); };
   let outcome = 'completed';
@@ -99,7 +111,7 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
   process.on('SIGINT', onSig);
   process.on('SIGTERM', onSig);
   // background by default: no window, no focus. --show opens normal windows for debugging.
-  const ctx = await openAdmin(profileDirFor(root, envName), !opts.show);
+  const ctx = await openAdmin(profileDirFor(root, envName), opts.show ? 'show' : opts.headless ? 'headless' : 'quiet');
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   let designPage = null;
   try {
@@ -112,9 +124,9 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
       // 1. clean the store (WORKFLOW A.2)
       prog.setPhase('batch', `Batch ${b}`);
       if (!opts.skipClean) {
-        prog.setPhase('cleaning', `Batch ${b}: cleaning the store`);
-        const lib = await themesApi.listThemes(ctx, env);
-        for (const t of lib) { const r = await themesApi.deleteTheme(ctx, env, t.id, path.join(runDir, '_debug')); log(`  clean ${t.name || t.id}: ${r.ok ? 'deleted' : r.reason}`); }
+        prog.setPhase('cleaning', `Batch ${b}: deleting the draft themes from the previous batch`);
+        const c = await themesApi.cleanDrafts(ctx, env, log, path.join(runDir, '_debug'));
+        log(`  store cleaned: ${c.deleted} draft theme(s) deleted${c.failed.length ? ', ' + c.failed.length + ' could not be deleted' : ''}`);
       }
       // 2. install the batch (WORKFLOW A.3)
       const ids = new Map();
@@ -122,7 +134,8 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
       prog.setPhase('installing', `Batch ${b}: installing themes`);
       for (const t of group) {
         prog.setTheme(t.name, { status: 'installing', step: 'Checking the theme library' });
-        const known = library.find((x) => x.name && x.name.toLowerCase() === t.name.toLowerCase());
+        // never the live theme (for example Horizon on a store whose live theme is Horizon): a draft copy is installed instead
+        const known = opts.skipClean ? library.find((x) => !x.live && x.name && x.name.toLowerCase() === t.name.toLowerCase()) : null;
         if (known) { ids.set(t.name, known.id); log(`  ${t.name}: already in library (${known.id})`); continue; }
         const before = new Set(library.map((x) => x.id));
         const r = await themesApi.installAndFind(ctx, env, t.name, before);
@@ -151,6 +164,9 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
     try { fs.rmSync(path.join(runDir, '_video'), { recursive: true, force: true }); } catch (e) { /* leftovers */ }
     process.removeListener('SIGINT', onSig);
     process.removeListener('SIGTERM', onSig);
+  }
+  if (!opts.skipClean && !opts.keepThemes && outcome === 'completed') {
+    try { prog.setPhase('cleaning', 'Deleting the test themes from the store'); await cleanAtEnd(root, cfg, envName, runDir, log); } catch (e) { log('Final clean failed: ' + e.message); }
   }
   prog.setPhase('finishing', 'Writing the report, summary and issue tracker');
   const fin = finalizeRun({ root, cfg, run, checklist, trackIssues: true });

@@ -39,6 +39,11 @@ async function openEditor(ctx, env, themeId) {
   await showWindow(ctx, page);
   const f = await editorFrame(page);
   await waitIdle(page, f);
+  // The tool changes app embeds and Findter's settings. Never do that on the live theme of a store.
+  if (!env.allowLiveTheme && (await f.getByText(/^Active$/).count().catch(() => 0)) > 0) {
+    await page.close().catch(() => {});
+    throw Object.assign(new Error('This theme is the live (Active) theme of the store. The tool only works on draft themes unless the environment sets allowLiveTheme, so it stopped before changing anything.'), { reason: 'theme_is_live' });
+  }
   return { page, f };
 }
 
@@ -127,30 +132,35 @@ async function chooseThemeAndSave(ed, themeName) {
   return { ok: true, steps };
 }
 
-// WORKFLOW A.4: "..." on the editor header, then Preview. The tab that opens is Tab 3.
-// Returns { url, via }. Falls back to the anonymous preview_theme_id URL if the menu cannot be driven.
+// WORKFLOW A.4: "..." (View actions) on the editor header, then Preview. The tab that opens is Tab 3.
+// The menu lives inside the editor frame, not in the admin page. The preview works through the cookies Shopify sets for
+// this admin session (the address itself is just /collections/all), so the cookies are returned for the test contexts:
+// a draft or trial theme, or a store with a password, cannot be opened by its address alone.
+// Falls back to the preview_theme_id address if the menu cannot be driven.
 async function getPreviewUrl(ed, env, themeId) {
-  const { page } = ed;
+  const { page, f } = ed;
+  const ctx = page.context();
   const fallback = `https://${env.shop}/collections/all?preview_theme_id=${themeId}`;
   try {
-    const more = page.getByRole('button', { name: /more actions|^more$|\.\.\.|…/i }).first();
-    await more.click({ timeout: 8000 });
-    const item = page.getByRole('menuitem', { name: /^preview$/i }).first();
-    const popupP = page.context().waitForEvent('page', { timeout: 15000 });
-    await item.click({ timeout: 8000 });
+    await f.getByRole('button', { name: 'View actions' }).click({ timeout: 10000 });
+    await page.waitForTimeout(800);
+    const popupP = ctx.waitForEvent('page', { timeout: 20000 });
+    popupP.catch(() => {}); // if the click fails first, this must not become an unhandled rejection
+    await f.getByText(/^Preview$/).first().click({ timeout: 8000 });
     const popup = await popupP;
     await popup.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+    await popup.waitForTimeout(4000);
     const url = popup.url();
+    const cookies = await ctx.cookies(`https://${env.shop}`);
     await popup.close().catch(() => {});
-    if (/^https?:\/\//.test(url) && !/about:blank/.test(url)) return { url: ensureCollection(url, env), via: 'editor Preview' };
-  } catch (e) { /* menu not found: use the fallback */ }
-  return { url: fallback, via: 'preview_theme_id fallback (editor Preview menu not driven)' };
+    if (/^https?:\/\//.test(url) && !/about:blank/.test(url)) return { url: ensureCollection(url), via: 'editor Preview', cookies };
+  } catch (err) { /* menu not found: use the fallback */ }
+  return { url: fallback, via: 'preview_theme_id fallback (editor Preview menu not driven)', cookies: null };
 }
 
-function ensureCollection(url, env) {
+function ensureCollection(url) {
   const u = new URL(url);
   if (!/\/collections\//.test(u.pathname)) u.pathname = '/collections/all';
-  void env;
   return u.toString();
 }
 

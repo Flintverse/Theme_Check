@@ -61,6 +61,8 @@ button[disabled]{opacity:.45;cursor:not-allowed}
 pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.45 ui-monospace,monospace;background:var(--na-bg);padding:10px;border-radius:8px;max-height:260px;overflow:auto}
 a{color:var(--accent)}
 .hide{display:none!important}
+.ev{display:grid;gap:6px;min-width:190px;max-width:260px}.ev img{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;cursor:zoom-in;background:var(--na-bg)}.ev video{width:100%;border:1px solid var(--line);border-radius:6px;background:#000}
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:20;cursor:zoom-out;padding:16px}#lightbox img{max-width:100%;max-height:100%;border-radius:8px}
 svg.chart{width:100%;height:150px}
 .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--fail);animation:pulse 1.4s ease-in-out infinite;vertical-align:middle}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
@@ -76,6 +78,7 @@ svg.chart{width:100%;height:150px}
   <span class="brand">Theme check</span><span id="mode" class="badge">...</span>
   <nav id="nav"></nav>
 </div></header>
+<div id="lightbox" role="dialog" aria-label="Picture"></div>
 <main id="main"><div class="card">Loading...</div></main>
 
 <script>
@@ -161,6 +164,12 @@ svg.chart{width:100%;height:150px}
       '<div class="card"><h3>Open the full report</h3><a href="runs/' + encodeURIComponent(L.runId) + '/report.html">report.html of ' + esc(L.runId) + '</a> <span class="muted small">(pictures and videos of every failing check)</span></div>';
   }
 
+  function mediaUrl(run, rel) { return 'runs/' + encodeURIComponent(run) + '/' + String(rel).split('/').map(encodeURIComponent).join('/'); }
+  function evidenceHtml(i) {
+    var e = i.evidence; if (!e || (!(e.shots && e.shots.length) && !e.video)) return '<span class="muted small">none kept</span>';
+    return '<div class="ev">' + (e.shots || []).map(function (sh) { return '<img loading="lazy" data-zoom="1" src="' + esc(mediaUrl(e.run, sh)) + '" alt="' + esc(sh.split('/').pop()) + '">'; }).join('') +
+      (e.video ? '<video controls preload="none" src="' + esc(mediaUrl(e.run, e.video)) + '"></video>' : '') + '</div>';
+  }
   function dots(it) {
     var h = (it.history || []).slice(-12);
     return '<span class="dots">' + h.map(function (x) { return '<i class="' + (x.s === 'fail' ? 'fail' : x.s === 'pass' ? 'pass' : '') + '" title="' + esc(x.date + ': ' + x.s) + '"></i>'; }).join('') + '</span>';
@@ -183,13 +192,13 @@ svg.chart{width:100%;height:150px}
       '<label class="f">Check<select id="f-check">' + opt('', f.check, 'All checks') + checks.map(function (t) { return opt(t, f.check); }).join('') + '</select></label>' +
       '<label class="f">Env<select id="f-env">' + opt('', f.env, 'All') + S.envs.map(function (t) { return opt(t, f.env); }).join('') + '</select></label>' +
       '<span class="muted small">' + list.length + ' shown</span></div></div>' +
-      '<div class="card scroll"><table><thead><tr><th>Status</th><th>Theme</th><th>Layout</th><th>Check</th><th>First seen</th><th>Last seen failing</th><th>Fixed on</th><th>Checks</th><th>Later checks</th></tr></thead><tbody>' +
+      '<div class="card scroll"><table><thead><tr><th>Status</th><th>Theme</th><th>Layout</th><th>Check</th><th>First seen</th><th>Last seen failing</th><th>Fixed on</th><th>Checks</th><th>Later checks</th><th>Evidence (latest failure)</th></tr></thead><tbody>' +
       (list.length ? list.map(function (i) {
         return '<tr><td><span class="pill p-' + i.status + '">' + i.status.toUpperCase() + '</span>' + (i.reopened ? ' <span class="pill p-major" title="came back after being fixed">REOPENED x' + i.reopened + '</span>' : '') + '</td>' +
           '<td>' + esc(i.theme) + '<div class="small muted">' + esc(i.env) + '</div></td><td>' + esc(i.layout) + '</td>' +
           '<td><b>' + esc(i.id) + '</b> <span class="pill p-' + esc(i.severity) + '">' + esc(i.severity) + '</span><div class="small">' + esc(i.title) + '</div><div class="small muted">' + esc(String(i.lastDetail || '').slice(0, 160)) + '</div></td>' +
           '<td>' + esc(i.firstSeen) + '</td><td>' + esc(i.lastSeen) + '</td><td>' + (i.fixedOn ? esc(i.fixedOn) + '<div class="small muted">' + esc(i.fixedRun) + '</div>' : '<span class="muted">still open</span>') + '</td>' +
-          '<td>' + (i.history || []).length + '</td><td>' + dots(i) + '<div class="small"><a href="runs/' + encodeURIComponent(i.lastRun) + '/report.html#' + encodeURIComponent(i.id) + '">report</a></div></td></tr>';
+          '<td>' + (i.history || []).length + '</td><td>' + dots(i) + '<div class="small"><a href="runs/' + encodeURIComponent(i.lastRun) + '/report.html#' + encodeURIComponent(i.id) + '">full report</a></div></td><td>' + evidenceHtml(i) + '</td></tr>';
       }).join('') : '<tr><td colspan="9" class="muted">No issues match.</td></tr>') + '</tbody></table></div>';
   }
   function bindIssues() {
@@ -265,37 +274,49 @@ svg.chart{width:100%;height:150px}
   }
 
   /* ---- Themes ---- */
+  var themesEnv = 'staging';
   function themesList() { return draftThemes || S.themes; }
+  function inEnv(t, env) { return (t.envs || ['staging', 'prod']).indexOf(env) >= 0; }
   function vThemes() {
-    var ro = S.readOnly, list = themesList(), status = {};
-    (S.themeStatus || []).forEach(function (t) { status[t.theme] = (status[t.theme] || 0) + t.open; });
-    var enabled = list.filter(function (t) { return t.enabled !== false; }).length;
-    var batches = Array.from(new Set(list.filter(function (t) { return t.enabled !== false; }).map(function (t) { return t.batch; }))).length;
-    return '<div><h2>Themes</h2><p class="muted small">Names exactly as the Shopify Theme Store shows them. The store holds at most 20 themes, so they are tested in batches of 10: install, test, delete, next batch. ' + enabled + ' enabled in ' + batches + ' batch(es).</p></div>' +
-      (ro ? '<div class="note">Read-only copy. Open the dashboard on the test machine to change the list.</div>' : '') +
-      '<div class="card"><div class="row"><label class="f">Add a theme<input type="text" id="t-new" placeholder="e.g. Impulse" maxlength="60" ' + (ro ? 'disabled' : '') + '></label>' +
-      '<button id="t-add" ' + (ro ? 'disabled' : '') + '>Add</button>' +
-      '<button id="t-bulk-toggle" ' + (ro ? 'disabled' : '') + '>Add many...</button>' +
-      '<button id="t-auto" ' + (ro ? 'disabled' : '') + ' title="Enabled themes, 10 per batch, in list order">Re-batch by 10</button></div>' +
+    var ro = S.readOnly, list = themesList(), env = themesEnv, lib = (S.library || {})[env] || null;
+    var rows = list.filter(function (t) { return inEnv(t, env); });
+    var active = rows.filter(function (t) { return t.enabled !== false; });
+    var batchOf = {}; active.forEach(function (t, i) { batchOf[t.name] = Math.floor(i / 10) + 1; });
+    var nBatches = Math.ceil(active.length / 10);
+    var store = {}; if (lib) { lib.present.forEach(function (p) { store[p.name.toLowerCase()] = p.ids.length; }); }
+    var open = {}; (S.themeStatus || []).forEach(function (t) { if (t.env === env) open[t.theme] = (open[t.theme] || 0) + t.open; });
+    var haveN = lib ? lib.present.length : null;
+    return '<div><h2>Themes</h2><p class="muted small">Names exactly as the Shopify Theme Store shows them. A store holds at most 20 themes, so each list is tested in batches of 10: install, test, delete, next batch. Batches are worked out from the list order.</p></div>' +
+      (ro ? '<div class="note">Read-only copy. Open the dashboard on the test machine to change the lists.</div>' : '') +
+      '<div class="card"><div class="row"><label class="f">List<select id="t-env">' + S.envs.map(function (e) { return '<option value="' + esc(e) + '"' + (e === env ? ' selected' : '') + '>' + esc(e) + ' list (' + list.filter(function (t) { return inEnv(t, e) && t.enabled !== false; }).length + ' themes)</option>'; }).join('') + '</select></label>' +
+      '<span class="small"><b>' + active.length + '</b> to test in <b>' + nBatches + '</b> batch(es)' + (lib ? ' &middot; in the store library now: <b>' + haveN + '</b>, missing: <b>' + lib.missing.length + '</b> (checked ' + esc(String(lib.checkedAt).replace('T', ' ').slice(0, 16)) + ')' : ' &middot; store library not checked yet (<code>node src/cli.js library --env ' + esc(env) + '</code>)') + '</span></div>' +
+      '<div class="row" style="margin-top:10px"><label class="f">Add a theme to this list<input type="text" id="t-new" placeholder="e.g. Impulse" maxlength="60" ' + (ro ? 'disabled' : '') + '></label><button id="t-add" ' + (ro ? 'disabled' : '') + '>Add</button><button id="t-bulk-toggle" ' + (ro ? 'disabled' : '') + '>Add many...</button></div>' +
       '<div id="t-bulk" class="hide" style="margin-top:10px"><textarea id="t-bulk-text" placeholder="One theme per line"></textarea><button id="t-bulk-add">Add these</button></div></div>' +
-      '<div class="card scroll"><table><thead><tr><th>On</th><th>Theme</th><th>Batch</th><th>Open issues</th><th></th></tr></thead><tbody>' +
-      list.map(function (t, i) {
-        return '<tr><td><input type="checkbox" data-i="' + i + '" class="t-on" ' + (t.enabled !== false ? 'checked' : '') + (ro ? ' disabled' : '') + ' aria-label="Test ' + esc(t.name) + '"></td><td>' + esc(t.name) + '</td>' +
-          '<td><input type="number" min="1" max="99" value="' + t.batch + '" data-i="' + i + '" class="t-batch" style="width:70px"' + (ro ? ' disabled' : '') + '></td>' +
-          '<td>' + (status[t.name] ? '<span class="pill p-open">' + status[t.name] + '</span>' : '<span class="muted">-</span>') + '</td>' +
-          '<td><button class="danger t-del" data-i="' + i + '"' + (ro ? ' disabled' : '') + '>Remove</button></td></tr>';
+      (lib && lib.extras && lib.extras.length ? '<div class="note">Also in the store but not in this list: ' + lib.extras.map(function (x) { return esc(x.name); }).join(', ') + '</div>' : '') +
+      (lib && lib.duplicates && lib.duplicates.length ? '<div class="note">Duplicates in the store: ' + lib.duplicates.map(function (x) { return esc(x.name) + ' x' + x.ids.length; }).join(', ') + '</div>' : '') +
+      '<div class="card scroll"><table><thead><tr><th>On</th><th>#</th><th>Theme</th><th>Batch</th><th>In store</th><th>Open issues</th><th>Lists</th><th></th></tr></thead><tbody>' +
+      rows.map(function (t, i) {
+        var idx = list.indexOf(t), st = store[t.name.toLowerCase()];
+        return '<tr><td><input type="checkbox" data-i="' + idx + '" class="t-on" ' + (t.enabled !== false ? 'checked' : '') + (ro ? ' disabled' : '') + ' aria-label="Test ' + esc(t.name) + '"></td><td class="muted">' + (i + 1) + '</td><td>' + esc(t.name) + '</td>' +
+          '<td>' + (batchOf[t.name] || '-') + '</td>' +
+          '<td>' + (!lib ? '<span class="muted">?</span>' : st ? '<span class="pill p-pass">YES' + (st > 1 ? ' x' + st : '') + '</span>' : '<span class="pill p-open">MISSING</span>') + '</td>' +
+          '<td>' + (open[t.name] ? '<span class="pill p-open">' + open[t.name] + '</span>' : '<span class="muted">-</span>') + '</td>' +
+          '<td class="small">' + S.envs.map(function (e) { return '<label style="margin-right:8px"><input type="checkbox" class="t-env" data-i="' + idx + '" data-env="' + esc(e) + '" ' + (inEnv(t, e) ? 'checked' : '') + (ro ? ' disabled' : '') + '> ' + esc(e) + '</label>'; }).join('') + '</td>' +
+          '<td><button class="danger t-del" data-i="' + idx + '"' + (ro ? ' disabled' : '') + '>Remove</button></td></tr>';
       }).join('') + '</tbody></table></div>' +
       '<div class="row"><button class="primary" id="t-save" ' + (ro || !draftThemes ? 'disabled' : '') + '>Save changes</button><span id="t-msg" class="muted small">' + (draftThemes ? 'Unsaved changes.' : '') + '</span></div>';
   }
   function bindThemes() {
+    $('t-env').onchange = function (e) { themesEnv = e.target.value; render(); };
     if (S.readOnly) return;
-    function draft() { if (!draftThemes) draftThemes = S.themes.map(function (t) { return Object.assign({}, t); }); return draftThemes; }
+    function draft() { if (!draftThemes) draftThemes = S.themes.map(function (t) { return Object.assign({}, t, { envs: (t.envs || ['staging', 'prod']).slice() }); }); return draftThemes; }
     function add(names) {
-      var d = draft(), have = d.map(function (t) { return t.name.toLowerCase(); }), maxB = d.reduce(function (m, t) { return Math.max(m, t.batch); }, 1), inLast = d.filter(function (t) { return t.batch === maxB; }).length;
+      var d = draft(), have = {}; d.forEach(function (t, i) { have[t.name.toLowerCase()] = i; });
       names.forEach(function (n) {
-        n = n.replace(/\s+/g, ' ').trim(); if (!n || have.indexOf(n.toLowerCase()) >= 0) return;
-        if (inLast >= 10) { maxB++; inLast = 0; } inLast++; have.push(n.toLowerCase());
-        d.push({ name: n, batch: maxB, enabled: true });
+        n = n.replace(/\s+/g, ' ').trim(); if (!n) return;
+        var k = n.toLowerCase();
+        if (have[k] !== undefined) { var ex = d[have[k]]; if (ex.envs.indexOf(themesEnv) < 0) ex.envs.push(themesEnv); return; }
+        have[k] = d.length; d.push({ name: n, envs: [themesEnv], batch: 1, enabled: true });
       });
       render();
     }
@@ -303,10 +324,11 @@ svg.chart{width:100%;height:150px}
     $('t-new').onkeydown = function (e) { if (e.key === 'Enter') add([$('t-new').value]); };
     $('t-bulk-toggle').onclick = function () { $('t-bulk').classList.toggle('hide'); };
     $('t-bulk-add').onclick = function () { add($('t-bulk-text').value.split(/\r?\n/)); };
-    $('t-auto').onclick = function () { var n = 0; draft().forEach(function (t) { if (t.enabled !== false) t.batch = Math.floor(n++ / 10) + 1; }); render(); };
     Array.prototype.forEach.call(document.querySelectorAll('.t-on'), function (el) { el.onchange = function () { draft()[+el.dataset.i].enabled = el.checked; render(); }; });
-    Array.prototype.forEach.call(document.querySelectorAll('.t-batch'), function (el) { el.onchange = function () { draft()[+el.dataset.i].batch = Math.max(1, +el.value || 1); render(); }; });
-    Array.prototype.forEach.call(document.querySelectorAll('.t-del'), function (el) { el.onclick = function () { var d = draft(); if (confirm('Remove ' + d[+el.dataset.i].name + ' from the list? Its past results and issues stay in the history.')) { d.splice(+el.dataset.i, 1); render(); } }; });
+    Array.prototype.forEach.call(document.querySelectorAll('.t-env'), function (el) {
+      el.onchange = function () { var t = draft()[+el.dataset.i], e = el.dataset.env, i = t.envs.indexOf(e); if (el.checked && i < 0) t.envs.push(e); if (!el.checked && i >= 0) t.envs.splice(i, 1); render(); };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.t-del'), function (el) { el.onclick = function () { var d = draft(); if (confirm('Remove ' + d[+el.dataset.i].name + ' from ALL lists? Its past results and issues stay in the history.')) { d.splice(+el.dataset.i, 1); render(); } }; });
     $('t-save').onclick = function () { api('PUT', '/api/themes', { themes: draftThemes }).then(function () { return load(); }).then(function () { $('t-msg') && ($('t-msg').textContent = 'Saved.'); }).catch(function (e) { $('t-msg').textContent = 'Could not save: ' + e.message; }); };
   }
 
@@ -359,6 +381,12 @@ svg.chart{width:100%;height:150px}
     api('GET', '/api/run-log').then(function (r) { box.classList.remove('hide'); box.textContent = r.log || '(no output yet)'; box.scrollTop = box.scrollHeight; if (r.running && TAB === 'schedule') pollT = setTimeout(poll, 4000); else if (!r.running) load(); }).catch(function () {});
   }
 
+  document.addEventListener('click', function (e) {
+    var lb = $('lightbox');
+    if (e.target && e.target.getAttribute && e.target.getAttribute('data-zoom')) { lb.innerHTML = '<img src="' + esc(e.target.src) + '" alt="">'; lb.style.display = 'flex'; }
+    else if (lb.style.display === 'flex') { lb.style.display = 'none'; lb.innerHTML = ''; }
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { $('lightbox').style.display = 'none'; } });
   window.addEventListener('hashchange', function () { var h = location.hash.slice(1); if (TABS.some(function (t) { return t[0] === h; })) { TAB = h; render(); } });
   var h0 = location.hash.slice(1); if (TABS.some(function (t) { return t[0] === h0; })) TAB = h0;
   load().then(function () { return loadProgress(); }).then(function () { if (P && P.running && !location.hash) { TAB = 'live'; render(); } });

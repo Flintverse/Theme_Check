@@ -14,8 +14,8 @@ Dữ liệu chạy, ảnh, kết quả **không** đi qua GitHub: máy chạy ch
 
 ### A. Tạo API token của Cloudflare cho GitHub
 
-1. https://dash.cloudflare.com > biểu tượng tài khoản (góc phải trên) > **My Profile** > **API Tokens** > **Create Token**.
-2. Chọn **Create Custom Token**. Permissions: **Account** > **Cloudflare Pages** > **Edit**. Account Resources: chọn đúng tài khoản của bạn.
+1. Đăng nhập https://dash.cloudflare.com bằng `dungnn@bsscommerce.com` > biểu tượng tài khoản (góc phải trên) > **My Profile** > **API Tokens** > **Create Token**.
+2. Chọn **Create Custom Token**. Permissions: **Account** > **Cloudflare Pages** > **Edit**. Account Resources: chọn đúng tài khoản `dungnn@bsscommerce.com` (đây là tài khoản chứa project `bss-theme-check`).
 3. Tạo xong, copy token (chỉ hiện một lần).
 
 ### B. Thêm hai secret vào GitHub
@@ -25,7 +25,7 @@ Repo > **Settings** > **Secrets and variables** > **Actions** > **New repository
 | Tên | Giá trị |
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | token vừa tạo |
-| `CLOUDFLARE_ACCOUNT_ID` | `b3f76482b906548128429a5d22fe956e` |
+| `CLOUDFLARE_ACCOUNT_ID` | `929260e1f561ff749ec1a5ceacd62255` |
 
 ### C. Nên bật
 

@@ -1,6 +1,6 @@
 # Bản theo dõi trên Cloudflare (Pages + R2)
 
-Địa chỉ: **https://theme-check.pages.dev**. Mở trang, nhập **mã truy cập của team** một lần (trình duyệt nhớ 30 ngày), và xem tiến độ đang chạy theo từng theme, số liệu từng lần chạy, issue tracker, báo cáo, và **ảnh chụp màn hình tại khoảnh khắc lỗi** hiện thẳng trong trang. Không còn video.
+Địa chỉ: **https://bss-theme-check.pages.dev**. Mở trang, nhập **mã truy cập của team** một lần (trình duyệt nhớ 30 ngày), và xem tiến độ đang chạy theo từng theme, số liệu từng lần chạy, issue tracker, báo cáo, và **ảnh chụp màn hình tại khoảnh khắc lỗi** hiện thẳng trong trang. Không còn video.
 
 ```text
 Máy chạy check ──(tiến độ ~30 giây/lần; kết quả, báo cáo, ảnh khi chạy xong)──▶ Pages Functions ──▶ R2 (một bucket)
@@ -16,6 +16,10 @@ Team ──(mã truy cập, cookie)──▶ dashboard ────────�
 | Cùng các file trên | Máy chạy check: `history/runs/...` (xem ngay ở `http://127.0.0.1:4173`) |
 
 Ảnh của check đã pass bị xóa sau mỗi lần chạy, chỉ giữ ảnh của check lỗi hoặc cần xem tay. Một lần chạy đầy đủ vì thế nhỏ (ước tính vài chục MB), R2 miễn phí 10 GB là đủ cho nhiều tháng. Giá và hạn mức có thể đổi, xem trang giá R2 hiện tại.
+
+## Tài khoản và tên
+
+Tất cả nằm trên tài khoản Cloudflare **`dungnn@bsscommerce.com`** (Account ID `929260e1f561ff749ec1a5ceacd62255`): project Pages `bss-theme-check`, bucket R2 `theme-check-data`. (Một bản thử cũ tên `theme-check` còn ở tài khoản RMIT, không dùng nữa.)
 
 ## Cài đặt (làm một lần)
 
@@ -33,17 +37,17 @@ cd "C:\Users\BSS GROUP\Theme_Check"
 npx.cmd wrangler@3 login                                   # nếu chưa đăng nhập
 npx.cmd wrangler@3 r2 bucket create theme-check-data
 node src/cli.js publish --dashboard-only
-npx.cmd wrangler@3 pages deploy site --project-name theme-check --branch main
+npx.cmd wrangler@3 pages deploy site --project-name bss-theme-check --branch main
 ```
 
-Hai secret `INGEST_TOKEN` (cho máy chạy check) và `READ_KEY` (mã truy cập của team) đã được tạo trước đó trên project này. Nếu cần tạo lại: `npx.cmd wrangler@3 pages secret put READ_KEY --project-name theme-check`.
+Hai secret `INGEST_TOKEN` (cho máy chạy check) và `READ_KEY` (mã truy cập của team) đã được tạo trước đó trên project này. Nếu cần tạo lại: `npx.cmd wrangler@3 pages secret put READ_KEY --project-name bss-theme-check`.
 
 Kiểm tra liên kết với R2: dash.cloudflare.com > Workers & Pages > theme-check > Settings > Bindings. Phải có R2 bucket, tên biến `STORE`, bucket `theme-check-data`.
 
 ### 3. Máy chạy check
 
 - Biến môi trường Windows `THEME_CHECK_TOKEN` (cùng giá trị `INGEST_TOKEN`) đã đặt sẵn. Terminal mới mở sau đó mới thấy nó.
-- Trong `config/config.local.json` có `"cloudflare": { "url": "https://theme-check.pages.dev" }`.
+- Trong `config/config.local.json` có `"cloudflare": { "url": "https://bss-theme-check.pages.dev" }`.
 - Mã truy cập của team nằm trong `.secrets/team-access-code.txt` (file bị git bỏ qua). Gửi mã cho người trong team qua kênh riêng.
 
 ### 4. Thử
@@ -52,14 +56,14 @@ Kiểm tra liên kết với R2: dash.cloudflare.com > Workers & Pages > theme-c
 node src/cli.js sync --all
 ```
 
-Kết quả mong đợi: `Monitor updated: dashboard data, N run(s), M file(s).` Mở https://theme-check.pages.dev, nhập mã, thấy dashboard.
+Kết quả mong đợi: `Monitor updated: dashboard data, N run(s), M file(s).` Mở https://bss-theme-check.pages.dev, nhập mã, thấy dashboard.
 
 ## Dùng hằng ngày
 
 - Một lần chạy mới tự đẩy tiến độ (khoảng 30 giây một lần) và đẩy kết quả cùng ảnh khi xong.
 - Đẩy tay: `node src/cli.js sync --all` (hoặc `--run <mã>`).
 - Một lần chạy đã bắt đầu mà không có cấu hình đẩy: `node src/cli.js watch`.
-- Đổi mã truy cập: `npx.cmd wrangler@3 pages secret put READ_KEY --project-name theme-check`, rồi nói với team mã mới. Cookie cũ tự mất hiệu lực.
+- Đổi mã truy cập: `npx.cmd wrangler@3 pages secret put READ_KEY --project-name bss-theme-check`, rồi nói với team mã mới. Cookie cũ tự mất hiệu lực.
 
 ## Mức bảo vệ
 

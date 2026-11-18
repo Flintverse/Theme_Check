@@ -26,7 +26,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node src/cli.js publish --dashboard-only
-      - run: npx wrangler@3 pages deploy site --project-name theme-check --branch main
+      - run: npx wrangler@3 pages deploy site --project-name bss-theme-check --branch main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

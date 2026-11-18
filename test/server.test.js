@@ -133,10 +133,8 @@ test('publish: a read-only copy works on a plain static host', async () => {
   const http = require('http');
   const { publish } = require('../src/publish');
   const cfg = JSON.parse(fs.readFileSync(path.join(root, 'config', 'config.example.json'), 'utf8'));
-  fs.writeFileSync(path.join(root, 'history', 'runs', '2026-11-18-staging', 'x.webm'), 'v');
   const r = publish(root, cfg, 'site', {});
   assert.strictEqual(r.runs, 2);
-  assert.ok(!fs.existsSync(path.join(root, 'site', 'runs', '2026-11-18-staging', 'x.webm')), 'videos left out by default');
   assert.ok(fs.existsSync(path.join(root, 'site', 'runs', '2026-11-18-staging', 'report.html')));
   const site = path.join(root, 'site');
   const mime = { '.html': 'text/html', '.json': 'application/json' };

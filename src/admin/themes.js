@@ -88,10 +88,23 @@ async function installAndFind(ctx, env, name, before) {
   return { ok: false, reason: 'installed_but_not_found', detail: `No new theme named "${name}" appeared in the library.` };
 }
 
-// Themes page > the theme row's "Click for more theme actions" > Delete > confirm in the modal (which lives in its own frame).
-// Shopify itself refuses to delete the live theme; the caller never passes it. Returns { ok } or { ok:false, reason }.
-async function deleteTheme(ctx, env, id, debugDir) {
+// Is a theme still shown on the themes page? Reloads the page, so a stale view cannot fool the check.
+async function themeStillListed(ctx, env, id) {
   const page = await ctx.newPage();
+  try {
+    await page.goto(`https://admin.shopify.com/store/${env.adminHandle}/themes`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(6000);
+    for (const f of page.frames()) if (await f.locator(`a[href*="/themes/${id}/editor"]`).count().catch(() => 0)) return true;
+    return false;
+  } finally { await page.close().catch(() => {}); }
+}
+
+// Themes page > the theme row's "Click for more theme actions" > Delete > confirm in the modal (which lives in its own frame).
+// Shopify itself refuses to delete the live theme; the caller never passes it. Returns { ok } or { ok:false, reason, detail }.
+// When it fails it saves a picture and the dialog text, so the cause can be read afterwards.
+async function deleteOnce(ctx, env, id, debugDir) {
+  const page = await ctx.newPage();
+  const diag = { dialog: '', notes: [] };
   try {
     await page.goto(`https://admin.shopify.com/store/${env.adminHandle}/themes`, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await showWindow(ctx, page);
@@ -103,32 +116,54 @@ async function deleteTheme(ctx, env, id, debugDir) {
       await row.locator('button[aria-label="Click for more theme actions"]').first().click({ timeout: 8000 });
       await page.waitForTimeout(800);
       await row.getByText(/^Delete$/).first().click({ timeout: 8000 });
-      // the confirmation modal: a frame that has both Cancel and Delete buttons
       let confirmBtn = null;
       for (let i = 0; i < 20 && !confirmBtn; i++) {
         for (const fr of page.frames()) {
           const cancel = await fr.getByRole('button', { name: /^Cancel$/ }).count().catch(() => 0);
           const del = fr.getByRole('button', { name: /^Delete$/ });
-          if (cancel && (await del.count().catch(() => 0))) { confirmBtn = del.last(); break; }
+          if (cancel && (await del.count().catch(() => 0))) { confirmBtn = del.last(); diag.dialog = (await fr.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200); break; }
         }
         if (!confirmBtn) await page.waitForTimeout(500);
       }
-      if (!confirmBtn) return { ok: false, reason: 'delete_confirm_not_found' };
-      await confirmBtn.click({ timeout: 8000 });
-      // prove it is gone
-      for (let i = 0; i < 20; i++) {
-        await page.waitForTimeout(1500);
-        let still = false;
-        for (const fr of page.frames()) if (await fr.locator(`a[href*="/themes/${id}/editor"]`).count().catch(() => 0)) still = true;
-        if (!still) return { ok: true };
+      if (!confirmBtn) { diag.notes.push('no confirm dialog'); throw new Error('delete_confirm_not_found'); }
+      // The dialog's Delete button is clickable a moment before it is wired up: a click right away does nothing (seen in
+      // a real run, the dialog stayed open). Let it settle, click, and click again while the dialog is still open.
+      await page.waitForTimeout(2000);
+      for (let k = 0; k < 4; k++) {
+        await confirmBtn.click({ timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(3500);
+        const open = await Promise.all(page.frames().map((fr) => fr.getByRole('button', { name: /^Cancel$/ }).count().catch(() => 0)));
+        if (!open.some((n) => n > 0)) break;
+        diag.notes.push('dialog still open after click ' + (k + 1));
       }
-      return { ok: false, reason: 'delete_not_confirmed_by_page' };
+      // the page may keep showing the row for a while: judge by a reload, up to ~60 s
+      for (let i = 0; i < 5; i++) {
+        if (!(await themeStillListed(ctx, env, id))) return { ok: true };
+        await page.waitForTimeout(10000);
+      }
+      throw new Error('delete_not_confirmed_by_page');
     }
     return { ok: false, reason: 'theme_not_on_page' };
   } catch (e) {
-    if (debugDir) { fs.mkdirSync(debugDir, { recursive: true }); await page.screenshot({ path: path.join(debugDir, `delete-${id}.png`) }).catch(() => {}); }
-    return { ok: false, reason: 'delete_failed', detail: String(e.message).split(/[\r\n]/)[0].slice(0, 200) };
+    const msg = String(e.message).split(/[\r\n]/)[0].slice(0, 160);
+    if (debugDir) {
+      fs.mkdirSync(debugDir, { recursive: true });
+      await page.screenshot({ path: path.join(debugDir, `delete-${id}.png`) }).catch(() => {});
+      fs.writeFileSync(path.join(debugDir, `delete-${id}.json`), JSON.stringify({ id, error: msg, diag, at: new Date().toISOString() }, null, 2));
+    }
+    return { ok: false, reason: /^delete_/.test(msg) ? msg : 'delete_failed', detail: msg + (diag.dialog ? ' | dialog: ' + diag.dialog : '') };
   } finally { await page.close().catch(() => {}); }
+}
+
+// Up to 3 attempts with a pause between them.
+async function deleteTheme(ctx, env, id, debugDir) {
+  let r = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    r = await deleteOnce(ctx, env, id, debugDir);
+    if (r.ok || r.reason === 'theme_not_on_page') return r;
+    await new Promise((res) => setTimeout(res, 20000 * attempt));
+  }
+  return r;
 }
 
 // The themes page shows the live theme and at most 5 draft themes, newest first, so a store with more themes needs

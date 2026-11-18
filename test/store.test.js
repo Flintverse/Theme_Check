@@ -73,20 +73,18 @@ test('tracker: na keeps an open issue open; re-finalising a run does not double 
 
 test('finalizeRun: keeps evidence of failures only, writes summary, tracker and index', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-root-'));
-  const cfg = { archive: { keepVideosForRuns: 1 } };
+  const cfg = {};
   const runDir = path.join(root, 'history', 'runs', r1.runId);
   fs.mkdirSync(path.join(runDir, 'dawn'), { recursive: true });
   const png = Buffer.from('89504e470d0a1a0a', 'hex');
   ['dawn/pass.png', 'dawn/fail.png'].forEach((f) => fs.writeFileSync(path.join(runDir, f), png));
-  fs.writeFileSync(path.join(runDir, 'dawn', 'video.webm'), 'v');
   const run = JSON.parse(JSON.stringify(r1));
   run.themes[0].passes[0].results[0].shots = ['dawn/fail.png'];
   run.themes[0].passes[0].results[1].shots = ['dawn/pass.png'];
-  run.themes[0].passes[0].video = 'dawn/video.webm';
   fs.writeFileSync(path.join(runDir, 'results.json'), JSON.stringify(run));
   const out = finalizeRun({ root, cfg, run, checklist, trackIssues: true });
-  assert.ok(fs.existsSync(path.join(runDir, 'dawn', 'fail.png')));
-  assert.ok(!fs.existsSync(path.join(runDir, 'dawn', 'pass.png')), 'passing picture removed');
+  assert.ok(fs.existsSync(path.join(runDir, 'dawn', 'fail.png')), 'the picture of the failure is kept');
+  assert.ok(!fs.existsSync(path.join(runDir, 'dawn', 'pass.png')), 'the picture of a passing check is removed');
   assert.strictEqual(out.removedEvidence, 1);
   assert.ok(fs.existsSync(path.join(runDir, 'summary.json')));
   assert.ok(fs.existsSync(path.join(runDir, 'report.html')));
@@ -94,13 +92,10 @@ test('finalizeRun: keeps evidence of failures only, writes summary, tracker and 
   assert.strictEqual(idx[0].runId, r1.runId);
   const tr = JSON.parse(fs.readFileSync(path.join(root, 'history', 'data', 'issues.json'), 'utf8'));
   assert.ok(tr.items['staging|Dawn|vertical|V-10']);
-  // a second, newer run pushes the first run past the video retention
   const run2Dir = path.join(root, 'history', 'runs', r2.runId);
   fs.mkdirSync(run2Dir, { recursive: true });
   fs.writeFileSync(path.join(run2Dir, 'results.json'), JSON.stringify(r2));
-  const out2 = finalizeRun({ root, cfg, run: JSON.parse(JSON.stringify(r2)), checklist, trackIssues: true });
-  assert.strictEqual(out2.droppedVideos, 1);
-  assert.ok(!fs.existsSync(path.join(runDir, 'dawn', 'video.webm')));
+  finalizeRun({ root, cfg, run: JSON.parse(JSON.stringify(r2)), checklist, trackIssues: true });
   const idx2 = JSON.parse(fs.readFileSync(path.join(root, 'history', 'data', 'runs.json'), 'utf8'));
   assert.deepStrictEqual(idx2.map((r) => r.date), ['2026-11-18', '2026-11-11'], 'newest first');
 });

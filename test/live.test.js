@@ -65,8 +65,8 @@ test('sync config: needs url and token; Access headers only when both parts are 
   const c = sync.syncConfig({ cloudflare: { url: 'https://a.pages.dev/' } }, { THEME_CHECK_TOKEN: 'tok', CF_ACCESS_CLIENT_ID: 'id', CF_ACCESS_CLIENT_SECRET: 'sec' });
   assert.strictEqual(c.base, 'https://a.pages.dev');
   assert.strictEqual(c.headers.Authorization, 'Bearer tok');
-  assert.strictEqual(c.everyMs, 90000, 'progress is sent about every 90 s by default (free KV allows ~1000 writes a day)');
-  assert.strictEqual(sync.syncConfig({ cloudflare: { url: 'https://a.pages.dev', progressEverySeconds: 5 } }, { THEME_CHECK_TOKEN: 'tok' }).everyMs, 30000, 'never faster than 30 s');
+  assert.strictEqual(c.everyMs, 30000, 'progress is sent about every 30 s by default');
+  assert.strictEqual(sync.syncConfig({ cloudflare: { url: 'https://a.pages.dev', progressEverySeconds: 1 } }, { THEME_CHECK_TOKEN: 'tok' }).everyMs, 10000, 'never faster than 10 s');
   assert.strictEqual(c.headers['CF-Access-Client-Id'], 'id');
   assert.ok(!sync.syncConfig({ cloudflare: { url: 'https://a.pages.dev' } }, { THEME_CHECK_TOKEN: 'tok', CF_ACCESS_CLIENT_ID: 'id' }).headers['CF-Access-Client-Id']);
 });
@@ -90,72 +90,100 @@ test('push: progress is throttled, the last state always goes out, a failing mon
   assert.strictEqual(msgs.length, 1, 'warns once');
 });
 
-test('push: a daily budget protects the free KV write limit; the final update always goes out', async () => {
-  const calls = [];
-  const f = async (url, init) => { calls.push(JSON.parse(init.body).n); return { ok: true }; };
-  let now = Date.parse('2026-11-18T01:00:00Z');
-  const push = sync.createProgressPusher({ base: 'https://x.dev', headers: {} }, { everyMs: 1000, maxPerDay: 3, fetchImpl: f, now: () => now });
-  for (let i = 1; i <= 6; i++) { now += 2000; push({ running: true, n: i }); }
-  push({ running: false, n: 99 });
-  await push.done();
-  assert.deepStrictEqual(calls, [1, 2, 3, 99], 'three updates, then only the final one');
-  now = Date.parse('2026-11-19T01:00:00Z'); // the next day the budget starts again
-  push({ running: true, n: 100 });
-  await push.done();
-  assert.strictEqual(calls[calls.length - 1], 100);
+test('push: run files are uploaded (reports and pictures only, never videos), and failures are reported', async () => {
+  const dir = tmp();
+  fs.mkdirSync(path.join(dir, 'dawn'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'report.html'), '<html>');
+  fs.writeFileSync(path.join(dir, 'summary.json'), '{}');
+  fs.writeFileSync(path.join(dir, 'dawn', 'a.png'), 'p');
+  fs.writeFileSync(path.join(dir, 'dawn', 'old-video.webm'), 'v');
+  const seen = [];
+  const f = async (url) => { seen.push(url.split('/api/ingest/')[1]); return { ok: !/a\.png/.test(url), status: 500 }; };
+  const r = await sync.pushRunFiles({ base: 'https://x.dev', headers: {} }, dir, 'run1', { fetchImpl: f });
+  assert.deepStrictEqual(seen.sort(), ['media/run1/dawn/a.png', 'media/run1/report.html', 'media/run1/summary.json']);
+  assert.strictEqual(r.uploaded, 2);
+  assert.strictEqual(r.failed.length, 1);
 });
 
-// ---- Cloudflare Functions against a fake KV namespace
-function fakeKV() {
+// ---- Cloudflare Functions against a fake R2 bucket
+function fakeR2() {
   const m = new Map();
-  return { m, async put(k, v) { m.set(k, String(v)); }, async get(k) { return m.has(k) ? m.get(k) : null; } };
+  return {
+    m,
+    async put(k, body, opts) { const buf = typeof body === 'string' ? Buffer.from(body) : Buffer.from(await new Response(body).arrayBuffer()); m.set(k, { buf, opts }); },
+    async get(k) { const o = m.get(k); return o ? { body: o.buf, text: async () => o.buf.toString() } : null; },
+  };
 }
 const TOKEN = 'a-long-test-token-1234567890';
 const imp = (rel) => import(pathToFileURL(path.join(SRC, rel)).href);
 
-test('cloudflare ingest: refuses without the token, stores progress and state, serves them back', async () => {
-  const env = { STORE: fakeKV(), INGEST_TOKEN: TOKEN };
+test('cloudflare ingest: refuses without the token, stores progress, state and pictures; serves them back', async () => {
+  const env = { STORE: fakeR2(), INGEST_TOKEN: TOKEN };
   const ingest = await imp('functions/api/ingest/[[path]].js');
   const req = (method, body, auth) => new Request('https://x.dev/api/ingest/x', { method, body, headers: auth === false ? {} : { authorization: 'Bearer ' + (auth || TOKEN) } });
-  const call = (p, body, auth, e) => ingest.onRequestPost({ request: req('POST', body, auth), env: e || env, params: { path: [p] } });
-  assert.strictEqual((await call('ping', '{}', false)).status, 401);
-  assert.strictEqual((await call('ping', '{}', 'wrong-token-wrong-token-1')).status, 401);
-  assert.strictEqual((await call('ping', '{}', undefined, { STORE: env.STORE })).status, 401, 'no secret configured means nobody gets in');
-  assert.strictEqual((await call('ping', '{}')).status, 200);
-  assert.strictEqual((await call('progress', 'not json')).status, 400);
-  assert.strictEqual((await call('progress', JSON.stringify({ running: true, runId: 'r' }))).status, 200);
-  assert.strictEqual((await call('state', JSON.stringify({ runs: [{ runId: 'r' }] }))).status, 200);
-  assert.strictEqual((await call('media', 'x')).status, 404, 'there is no media upload: pictures stay off Cloudflare');
-  assert.ok(env.STORE.m.has('state') && env.STORE.m.has('progress'));
-  assert.deepStrictEqual([...env.STORE.m.keys()].sort(), ['progress', 'state'], 'only two keys are ever written');
+  const post = (p, body, auth, e) => ingest.onRequestPost({ request: req('POST', body, auth), env: e || env, params: { path: [p] } });
+  const put = (parts, body) => ingest.onRequestPut({ request: req('PUT', body), env, params: { path: parts } });
+  assert.strictEqual((await post('ping', '{}', false)).status, 401);
+  assert.strictEqual((await post('ping', '{}', 'wrong-token-wrong-token-1')).status, 401);
+  assert.strictEqual((await post('ping', '{}', undefined, { STORE: env.STORE })).status, 401, 'no secret configured means nobody gets in');
+  assert.strictEqual((await post('ping', '{}')).status, 200);
+  assert.strictEqual((await post('progress', 'not json')).status, 400);
+  assert.strictEqual((await post('progress', JSON.stringify({ running: true, runId: 'r' }))).status, 200);
+  assert.strictEqual((await post('state', JSON.stringify({ runs: [{ runId: 'r' }] }))).status, 200);
+  assert.strictEqual((await put(['media', 'run1', 'report.html'], '<html>report')).status, 200);
+  assert.strictEqual((await put(['media', 'run1', 'dawn', 'a.png'], 'png-bytes')).status, 200);
+  assert.strictEqual((await put(['media', 'run1', 'dawn', 'video.webm'], 'v')).status, 415, 'videos are refused');
+  assert.strictEqual((await put(['media', 'run1', '..', 'etc.png'], 'x')).status, 400, 'path traversal refused');
+  assert.strictEqual((await put(['media', 'only-one-part'], 'x')).status, 400);
+  assert.strictEqual(env.STORE.m.get('runs/run1/report.html').opts.httpMetadata.contentType, 'text/html; charset=utf-8');
+  assert.strictEqual(env.STORE.m.get('runs/run1/dawn/a.png').opts.httpMetadata.contentType, 'image/png');
 
+  const get = (fn, e, headers) => fn.onRequestGet({ request: new Request('https://x.dev/api/x', { headers: headers || {} }), env: e, params: { path: ['run1', 'report.html'] } });
   const state = await imp('functions/api/state.js');
-  const get = (fn, e, key) => fn.onRequestGet({ request: new Request('https://x.dev/api/x', { headers: key ? { 'x-access-key': key } : {} }), env: e });
   assert.deepStrictEqual((await (await get(state, env)).json()).runs, [{ runId: 'r' }]);
-  const empty = await (await get(state, { STORE: fakeKV() })).json();
+  const empty = await (await get(state, { STORE: fakeR2() })).json();
   assert.strictEqual(empty.readOnly, true, 'empty state before the first push');
-  assert.strictEqual(empty.mediaLocal, false);
-
+  assert.strictEqual(empty.mediaLocal, true);
   const progress = await imp('functions/api/progress.js');
   assert.strictEqual((await (await get(progress, env)).json()).running, true);
-  env.STORE.m.set('progress', JSON.stringify({ running: true, updatedAt: new Date(Date.now() - 11 * 60000).toISOString() }));
+  env.STORE.m.set('data/progress.json', { buf: Buffer.from(JSON.stringify({ running: true, updatedAt: new Date(Date.now() - 11 * 60000).toISOString() })), opts: {} });
   const stale = await (await get(progress, env)).json();
   assert.strictEqual(stale.running, false);
   assert.strictEqual(stale.phase, 'stalled');
+  const runs = await imp('functions/runs/[[path]].js');
+  const rep = await get(runs, env);
+  assert.strictEqual(rep.status, 200);
+  assert.match(rep.headers.get('content-security-policy'), /default-src 'none'/);
+  assert.strictEqual((await runs.onRequestGet({ request: new Request('https://x.dev/runs/x'), env, params: { path: ['run1', 'nope.png'] } })).status, 404);
+  assert.strictEqual((await runs.onRequestGet({ request: new Request('https://x.dev/runs/x'), env, params: { path: ['..', 'data', 'state.json'] } })).status, 404);
 });
 
-test('cloudflare reading: with READ_KEY set, the team access code is required', async () => {
-  const env = { STORE: fakeKV(), READ_KEY: 'team-code-1234' };
-  await env.STORE.put('state', JSON.stringify({ runs: [{ runId: 'secret-run' }] }));
+test('cloudflare reading: with READ_KEY set, data and pictures need the team code (header or login cookie)', async () => {
+  const env = { STORE: fakeR2(), READ_KEY: 'team-code-1234' };
+  await env.STORE.put('data/state.json', JSON.stringify({ runs: [{ runId: 'secret-run' }] }));
+  await env.STORE.put('runs/run1/a.png', 'png', { httpMetadata: { contentType: 'image/png' } });
   const state = await imp('functions/api/state.js');
   const progress = await imp('functions/api/progress.js');
-  const get = (fn, key) => fn.onRequestGet({ request: new Request('https://x.dev/api/x', { headers: key ? { 'x-access-key': key } : {} }), env });
-  assert.strictEqual((await get(state)).status, 401);
-  assert.strictEqual((await get(state, 'wrong-code-9999')).status, 401);
-  assert.strictEqual((await get(progress)).status, 401);
-  const ok = await get(state, 'team-code-1234');
-  assert.strictEqual(ok.status, 200);
-  assert.strictEqual((await ok.json()).runs[0].runId, 'secret-run');
+  const runs = await imp('functions/runs/[[path]].js');
+  const login = await imp('functions/api/login.js');
+  const call = (fn, headers, params) => fn.onRequestGet({ request: new Request('https://x.dev/api/x', { headers: headers || {} }), env, params: params || {} });
+  assert.strictEqual((await call(state)).status, 401);
+  assert.strictEqual((await call(state, { 'x-access-key': 'wrong-code-9999' })).status, 401);
+  assert.strictEqual((await call(progress)).status, 401);
+  assert.strictEqual((await call(runs, {}, { path: ['run1', 'a.png'] })).status, 401, 'pictures are protected too');
+  assert.strictEqual((await call(state, { 'x-access-key': 'team-code-1234' })).status, 200);
+  const bad = await login.onRequestPost({ request: new Request('https://x.dev/api/login', { method: 'POST', body: JSON.stringify({ code: 'not-the-code-1' }) }), env });
+  assert.strictEqual(bad.status, 401);
+  const good = await login.onRequestPost({ request: new Request('https://x.dev/api/login', { method: 'POST', body: JSON.stringify({ code: 'team-code-1234' }) }), env });
+  assert.strictEqual(good.status, 200);
+  const setCookie = good.headers.get('set-cookie');
+  assert.match(setCookie, /HttpOnly/);
+  assert.match(setCookie, /Secure/);
+  assert.match(setCookie, /SameSite=Strict/);
+  const cookie = setCookie.split(';')[0];
+  assert.strictEqual((await call(state, { cookie })).status, 200, 'the cookie unlocks the data');
+  assert.strictEqual((await call(runs, { cookie }, { path: ['run1', 'a.png'] })).status, 200, 'and the pictures');
+  assert.strictEqual((await call(state, { cookie: 'tc_auth=' + 'a'.repeat(64) })).status, 401, 'a made-up cookie does not');
 });
 
 // ---- the Live tab
@@ -201,15 +229,29 @@ test('the Live tab shows run progress theme by theme, and a banner on the other 
   } finally { await browser.close(); server.close(); }
 });
 
-test('the Cloudflare copy asks for the team access code, then points to Drive instead of inline media', async () => {
+test('the Cloudflare copy: login with the team code (cookie), then pictures show inline from /runs', async () => {
   const http = require('http');
   const ui = fs.readFileSync(path.join(SRC, 'ui', 'index.html'));
-  const state = { readOnly: true, mediaLocal: false, evidenceUrl: 'https://drive.example/folder', envs: ['staging'], themes: [], schedule: { description: 'x' }, runs: [{ runId: '2026-11-18-staging', env: 'staging', date: '2026-11-18', startedAt: '2026-11-18T01:00:00Z', themesTotal: 1, themesTested: 1, themesWithIssues: 1, failedChecks: 1, newCount: 1, fixedCount: 0, worstThemes: [{ theme: 'Dawn', fails: 1 }], topChecks: [{ id: 'V-10', title: 'Selected looks selected', severity: 'critical', themes: 1 }], fixed: [], setupFailures: [] }], issues: { items: { 'staging|Dawn|vertical|V-10': { env: 'staging', theme: 'Dawn', layout: 'vertical', id: 'V-10', title: 'Selected looks selected', severity: 'critical', status: 'open', firstSeen: '2026-11-18', lastSeen: '2026-11-18', lastRun: '2026-11-18-staging', history: [{ s: 'fail', date: '2026-11-18' }], evidence: { run: '2026-11-18-staging', shots: ['dawn/a.png'], video: 'dawn/video.webm' } } } }, themeStatus: [], checklist: [], library: {} };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const state = { readOnly: true, mediaLocal: true, envs: ['staging'], themes: [], schedule: { description: 'x' }, runs: [{ runId: '2026-11-18-staging', env: 'staging', date: '2026-11-18', startedAt: '2026-11-18T01:00:00Z', themesTotal: 1, themesTested: 1, themesWithIssues: 1, failedChecks: 1, newCount: 1, fixedCount: 0, worstThemes: [{ theme: 'Dawn', fails: 1 }], topChecks: [{ id: 'V-10', title: 'Selected looks selected', severity: 'critical', themes: 1 }], fixed: [], setupFailures: [] }], issues: { items: { 'staging|Dawn|vertical|V-10': { env: 'staging', theme: 'Dawn', layout: 'vertical', id: 'V-10', title: 'Selected looks selected', severity: 'critical', status: 'open', firstSeen: '2026-11-18', lastSeen: '2026-11-18', lastRun: '2026-11-18-staging', history: [{ s: 'fail', date: '2026-11-18' }], evidence: { run: '2026-11-18-staging', shots: ['dawn/a.png'] } } } }, themeStatus: [], checklist: [], library: {} };
+  const authed = (req) => /(^|;\s*)tc_auth=ok123/.test(req.headers.cookie || '');
   const srv = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/api/login') {
+      let b = ''; req.on('data', (d) => { b += d; }).on('end', () => {
+        const ok = JSON.parse(b).code === 'team-code-1234';
+        res.writeHead(ok ? 200 : 401, Object.assign({ 'Content-Type': 'application/json' }, ok ? { 'Set-Cookie': 'tc_auth=ok123; Path=/; HttpOnly' } : {}));
+        res.end(ok ? '{"ok":true}' : '{"error":"wrong code"}');
+      });
+      return;
+    }
     if (req.url.startsWith('/api/state') || req.url.startsWith('/api/progress')) {
-      if (req.headers['x-access-key'] !== 'team-code-1234') { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end('{"error":"access code needed"}'); }
+      if (!authed(req)) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end('{"error":"access code needed"}'); }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(req.url.startsWith('/api/progress') ? '{"running":false,"none":true}' : JSON.stringify(state));
+    }
+    if (req.url.startsWith('/runs/')) {
+      if (!authed(req)) { res.writeHead(401); return res.end('no'); }
+      res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(png);
     }
     res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(ui);
   });
@@ -221,7 +263,7 @@ test('the Cloudflare copy asks for the team access code, then points to Drive in
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${srv.address().port}/`);
     await page.waitForSelector('#k-in');
-    assert.ok(!(await page.textContent('main')).includes('secret'), 'no data before the code');
+    assert.ok(!(await page.textContent('main')).includes('Dawn'), 'no data before the code');
     await page.fill('#k-in', 'wrong-code-9999');
     await page.click('#k-go');
     await page.waitForFunction(() => /not accepted/.test(document.querySelector('main').textContent));
@@ -230,10 +272,9 @@ test('the Cloudflare copy asks for the team access code, then points to Drive in
     await page.waitForSelector('.kpis');
     assert.match(await page.textContent('#mode'), /READ-ONLY/);
     await page.click('nav a[href="#issues"]');
-    await page.waitForFunction(() => /Open the evidence on Drive/.test(document.querySelector('main').textContent));
-    assert.strictEqual(await page.locator('.ev img, .ev video').count(), 0, 'no inline media on the Cloudflare copy');
-    assert.match(await page.textContent('main'), /runs\/2026-11-18-staging\/dawn\/a\.png/);
-    assert.strictEqual(await page.getAttribute('a[href="https://drive.example/folder"]', 'target'), '_blank');
+    await page.waitForSelector('.ev img');
+    await page.waitForFunction(() => { const i = document.querySelector('.ev img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 15000 });
+    assert.strictEqual(await page.locator('.ev video').count(), 0);
     assert.deepStrictEqual(errors, []);
     await page.close();
   } finally { await browser.close(); srv.close(); }

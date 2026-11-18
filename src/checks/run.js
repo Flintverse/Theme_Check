@@ -320,7 +320,7 @@ async function searchPass(p, c) {
       if (m.shiftPx > 12) probs.push(`widget is shifted ${m.shiftPx}px sideways from the bar`);
       p.add(P.size, probs.length ? 'fail' : 'pass', probs.join('; '), [typedShot]);
     }
-    p.add(P.stable, 'review', 'Look at the picture and video: widget stays put and does not expand over the page.', [typedShot]);
+    p.add(P.stable, 'review', 'Look at the picture: widget stays put and does not expand over the page.', [typedShot]);
   } else {
     p.add(P.back, m.backArrow ? 'pass' : 'fail', m.backArrow ? '' : "No back arrow ('←') next to Findter's search bar.", [typedShot]);
     if (m.backArrow) {
@@ -335,22 +335,20 @@ async function searchPass(p, c) {
   void c;
 }
 
-// One pass = one fresh context (so it can have its own video), one set of results.
-async function runPass({ browser, url, layout, viewportName, viewport, outDir, relDir, thresholds, keyword, videoDir, password, cookies }) {
+// One pass = one fresh context, one set of results. Evidence is a screenshot taken at the moment of each check (no video).
+async function runPass({ browser, url, layout, viewportName, viewport, outDir, relDir, thresholds, keyword, password, cookies }) {
   const mobile = viewportName === 'mobile';
   const ctx = await browser.newContext({
     viewport,
     isMobile: mobile,
     hasTouch: mobile,
     userAgent: mobile ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' : undefined,
-    recordVideo: videoDir ? { dir: videoDir, size: { width: viewport.width, height: viewport.height } } : undefined,
     // the preview session of the editor (see editor.getPreviewUrl): lets a draft theme or a password store open
     storageState: cookies && cookies.length ? { cookies, origins: [] } : undefined,
   });
   const page = await ctx.newPage();
   const c = collectors(page);
   const p = new Pass({ page, outDir, relDir, layout, viewport: viewportName, thresholds, keyword });
-  let video = null;
   let blocked = null;
   try {
     const loaded = await load(page, url, password);
@@ -362,17 +360,9 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
   } catch (e) {
     p.add('G-01', 'error', `Pass crashed: ${String(e.message).slice(0, 200)}`);
   } finally {
-    const v = page.video();
     await ctx.close();
-    video = v ? await v.path().catch(() => null) : null;
   }
-  const failed = p.results.some((r) => r.status === 'fail' || r.status === 'error');
-  let videoRel = null;
-  if (video && fs.existsSync(video)) {
-    if (failed) { videoRel = `${relDir}/video.webm`; fs.mkdirSync(path.join(outDir, relDir), { recursive: true }); fs.renameSync(video, path.join(outDir, videoRel)); }
-    else fs.unlinkSync(video);
-  }
-  return { layout, viewport: viewportName, results: p.results, video: videoRel, blocked };
+  return { layout, viewport: viewportName, results: p.results, blocked };
 }
 
 module.exports = { runPass, load, collectors, changedRatio };

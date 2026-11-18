@@ -24,7 +24,7 @@ function updateTracker(tracker, run, rows, checklist) {
     if (failing) {
       if (it.status === 'fixed') { it.status = 'open'; it.reopened += 1; it.fixedOn = null; it.fixedRun = null; }
       it.lastSeen = date; it.lastRun = run.runId; it.lastDetail = r.detail;
-      it.evidence = { run: run.runId, shots: (r.shots || []).slice(0, 4), video: r.video || null };
+      it.evidence = { run: run.runId, shots: (r.shots || []).slice(0, 4) };
       it.history.push({ run: run.runId, date, s: 'fail' });
     } else if (r.status === 'pass') {
       if (it.status === 'open') { it.status = 'fixed'; it.fixedOn = date; it.fixedRun = run.runId; }

@@ -50,31 +50,29 @@ test('library check: present, missing, extras and duplicates', () => {
   assert.ok(fs.existsSync(path.join(root, 'history', 'data', 'library-staging.json')));
 });
 
-test('tracker keeps the evidence of the latest failure', () => {
-  const run = { runId: 'r1', env: 'staging', startedAt: '2026-11-18T01:00:00Z', themes: [{ name: 'Dawn', passes: [{ layout: 'vertical', viewport: 'desktop', video: 'dawn/vertical-desktop/video.webm', results: [{ id: 'V-10', layout: 'vertical', status: 'fail', detail: 'x', shots: ['dawn/vertical-desktop/a.png', 'dawn/vertical-desktop/b.png'] }] }] }] };
+test('tracker keeps the evidence (pictures) of the latest failure', () => {
+  const run = { runId: 'r1', env: 'staging', startedAt: '2026-11-18T01:00:00Z', themes: [{ name: 'Dawn', passes: [{ layout: 'vertical', viewport: 'desktop', results: [{ id: 'V-10', layout: 'vertical', status: 'fail', detail: 'x', shots: ['dawn/vertical-desktop/a.png', 'dawn/vertical-desktop/b.png'] }] }] }] };
   const t = updateTracker(emptyTracker(), run, flatten(run), checklist);
   const it = t.items['staging|Dawn|vertical|V-10'];
-  assert.deepStrictEqual(it.evidence, { run: 'r1', shots: ['dawn/vertical-desktop/a.png', 'dawn/vertical-desktop/b.png'], video: 'dawn/vertical-desktop/video.webm' });
+  assert.deepStrictEqual(it.evidence, { run: 'r1', shots: ['dawn/vertical-desktop/a.png', 'dawn/vertical-desktop/b.png'] });
 });
 
-test('the report shows pictures and a video player in the page, not behind a link', () => {
-  const run = { runId: 'r1', env: 'staging', shop: 's', startedAt: '2026-11-18T01:00:00Z', themes: [{ name: 'Dawn', passes: [{ layout: 'vertical', viewport: 'desktop', video: 'dawn/vertical-desktop/video.webm', results: [{ id: 'V-10', layout: 'vertical', status: 'fail', detail: 'no tick', shots: ['dawn/vertical-desktop/a.png'] }] }] }] };
+test('the report shows the pictures in the page, not behind a link, and has no video', () => {
+  const run = { runId: 'r1', env: 'staging', shop: 's', startedAt: '2026-11-18T01:00:00Z', themes: [{ name: 'Dawn', passes: [{ layout: 'vertical', viewport: 'desktop', results: [{ id: 'V-10', layout: 'vertical', status: 'fail', detail: 'no tick', shots: ['dawn/vertical-desktop/a.png'] }] }] }] };
   const html = render(run, checklist, null);
   assert.match(html, /<img loading="lazy" src="dawn\/vertical-desktop\/a\.png"/);
-  assert.match(html, /<video class="ev" controls preload="metadata" src="dawn\/vertical-desktop\/video\.webm">/);
+  assert.ok(!/<video/.test(html));
   assert.ok(!/<details class="ev">/.test(html));
-  assert.ok(!/evidence<\/summary>/.test(html));
 });
 
-test('dashboard: lists, library status, and pictures + video shown inline in the issue tracker', async () => {
+test('dashboard: lists, library status, and pictures shown inline in the issue tracker', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-lists-'));
   ['config', 'checklist', 'ui'].forEach((d) => fs.cpSync(path.join(SRC, d), path.join(root, d), { recursive: true }));
-  const run = { runId: '2026-11-18-staging', env: 'staging', shop: 's', startedAt: '2026-11-18T01:00:00Z', themes: [{ name: 'Dawn', passes: [{ layout: 'vertical', viewport: 'desktop', video: 'dawn/vertical-desktop/video.webm', results: [{ id: 'V-10', layout: 'vertical', status: 'fail', detail: 'no tick', shots: ['dawn/vertical-desktop/a.png'] }] }] }] };
+  const run = { runId: '2026-11-18-staging', env: 'staging', shop: 's', startedAt: '2026-11-18T01:00:00Z', themes: [{ name: 'Dawn', passes: [{ layout: 'vertical', viewport: 'desktop', results: [{ id: 'V-10', layout: 'vertical', status: 'fail', detail: 'no tick', shots: ['dawn/vertical-desktop/a.png'] }] }] }] };
   const rd = path.join(root, 'history', 'runs', run.runId);
   fs.mkdirSync(path.join(rd, 'dawn', 'vertical-desktop'), { recursive: true });
   // a real 1x1 PNG, so the browser can decode it
   fs.writeFileSync(path.join(rd, 'dawn', 'vertical-desktop', 'a.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
-  fs.writeFileSync(path.join(rd, 'dawn', 'vertical-desktop', 'video.webm'), 'v');
   fs.writeFileSync(path.join(rd, 'results.json'), JSON.stringify(run));
   finalizeRun({ root, cfg: {}, run, checklist, trackIssues: true });
   saveLibrary(root, {}, 'staging', cfgLib.themesForEnv(cfgLib.loadThemes(root), 'staging', 10), [{ id: '1', name: 'Horizon' }, { id: '2', name: 'Dawn' }, { id: '3', name: 'Dawn' }, { id: '4', name: 'Craft' }, { id: '5', name: 'Foo Theme' }]);
@@ -101,7 +99,7 @@ test('dashboard: lists, library status, and pictures + video shown inline in the
     await page.click('nav a[href="#issues"]');
     await page.waitForSelector('.ev');
     assert.strictEqual(await page.locator('.ev img').count(), 1);
-    assert.strictEqual(await page.locator('.ev video').count(), 1);
+    assert.strictEqual(await page.locator('.ev video').count(), 0, 'no videos any more');
     await page.waitForFunction(() => { const i = document.querySelector('.ev img'); return i && i.complete && i.naturalWidth > 0; });
     await page.click('.ev img');
     assert.ok(await page.isVisible('#lightbox img'), 'clicking a picture enlarges it');

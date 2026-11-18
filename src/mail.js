@@ -14,8 +14,8 @@ function buildMail(run, checklist, prevRun, opts) {
   const failingThemes = new Set(rows.filter((r) => r.status === 'fail' || r.status === 'error').map((r) => r.theme)).size;
   const subject = `[Theme check] ${run.env}: ${issues.length} issue type(s) on ${failingThemes}/${themes} themes${newCount ? `, ${newCount} new` : ''} (${run.runId})`;
   const link = opts && opts.reportUrl
-    ? `<p><a href="${esc(opts.reportUrl)}">Open the full report with pictures and videos</a></p>`
-    : '<p>The full report is attached (report.html). Pictures and videos are in the run folder on the test machine.</p>';
+    ? `<p><a href="${esc(opts.reportUrl)}">Open the full report with the pictures</a></p>`
+    : '<p>The full report is attached (report.html). The pictures are in the run folder on the test machine.</p>';
   const issueRows = issues.map((i) => `<tr style="border-top:1px solid #ddd;vertical-align:top"><td><b>${esc(i.id)}</b><br><small>${esc(i.severity)}</small></td><td>${esc(i.title)}<br><small style="color:#555">${i.themes.length} theme(s): ${i.themes.map((x) => esc(x.theme) + (x.change === 'NEW' ? ' (new)' : '')).join(', ')}</small><br><small style="color:#777">e.g. ${esc(String((i.themes[0] || {}).detail || '').slice(0, 220))}</small></td></tr>`).join('');
   const html = `<div style="font:14px/1.5 system-ui,sans-serif;max-width:760px">
 <h2 style="margin:0 0 4px">Theme check: ${esc(run.env)}, ${esc(run.runId)}</h2>

@@ -4,7 +4,7 @@ Weekly check of Findter (Search & Filter) against Shopify themes. For every them
 
 1. installs the theme in batches of 10 (a store holds at most 20), turns on the two Findter embeds, picks the theme in Findter's Theme list;
 2. tests it against the checklist in `checklist/checklist.json` (Vertical, Horizontal, Off-canvas, Mobile, Search desktop and mobile);
-3. writes a run-sheet report (`runs/<date>-<env>/report.html`) in the style of the "Watermark Self-test 885" report: one card per checklist item with Steps, Expected, Actual per theme, pictures, and a video for any pass that failed;
+3. writes a run-sheet report (`runs/<date>-<env>/report.html`) in the style of the "Watermark Self-test 885" report: one card per checklist item with Steps, Expected, Actual per theme, and a screenshot of each failing check taken at that moment (no video);
 4. compares with the previous run (NEW / STILL / FIXED), groups themes that fail for the same reason, and mails the summary through Gmail.
 
 The full human workflow and the checklist reasoning are in [docs/WORKFLOW.md](docs/WORKFLOW.md). Read it first: the tool does exactly those steps (3 tabs: Tab 1 admin design page, Tab 2 theme editor, Tab 3 the editor's Preview).
@@ -13,7 +13,6 @@ The full human workflow and the checklist reasoning are in [docs/WORKFLOW.md](do
 
 ```
 npm install
-npx playwright-core install ffmpeg      # needed once, for the videos
 copy config\config.example.json config\config.local.json   # fill in themeStoreShop and the mail section
 node src/cli.js login --env staging     # once: log in to Shopify in the window that opens (emailed code)
 ```
@@ -29,9 +28,9 @@ Nothing secret goes into git: `config.local.json`, `.profile-*/` (saved Shopify 
 | `node src/cli.js check --url <storefront url> --name dawn --layouts vertical,offcanvas,mobile,search` | No admin at all: run the checklist on one storefront URL. This is what was used to calibrate the checks. |
 | `node src/cli.js report --run 2026-11-18-staging` | Rebuild a report from `results.json`. |
 | `node src/cli.js mail --run 2026-11-18-staging [--dry]` | Send (or print) the Gmail summary. |
-| `node src/cli.js sync` / `watch` | Push the dashboard data to the Cloudflare monitor (KV, no card needed) / keep pushing the live progress of a run. Pictures and videos stay on this machine (share via Google Drive). See [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md). |
+| `node src/cli.js sync [--run <id>] [--all]` / `watch` | Push the dashboard data, reports and pictures to the Cloudflare monitor (Pages + R2) / keep pushing the live progress of a run. See [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md) and [docs/GITHUB.md](docs/GITHUB.md). |
 | `node src/cli.js ui [--port 4173]` | **The dashboard** on `http://127.0.0.1:4173` (this machine only): **Live** (progress of the run in progress, theme by theme), Overview (numbers for the latest run, worst themes, most common issues, trend), Issue tracker, Runs, Themes (add / remove / enable / batch), Schedule (daily, weekly or every N days, Apply to Windows Task Scheduler, Run now). |
-| `node src/cli.js publish [--out site] [--with-videos]` | Builds a **read-only** copy of the dashboard in `site/` for a static host (see docs/DEPLOYMENT.md). |
+| `node src/cli.js publish [--out site]` | Builds a **read-only** copy of the dashboard in `site/` for a static host (see docs/DEPLOYMENT.md). |
 | `npm test` | Unit tests: the in-page measurements (good and bad layouts) and the report / compare / mail code. |
 
 Scheduling: set it in the dashboard (Schedule tab: daily, weekly, or every N days) and press Apply; it registers the Windows task "Theme check". The PC must be on, and the login from `node src/cli.js login` must still be valid.
@@ -41,13 +40,13 @@ Scheduling: set it in the dashboard (Schedule tab: daily, weekly, or every N day
 Every finished run is stored in `history/` (git-ignored). To share it, set `archive.dir` to a clone of a **private** repo and `archive.git` to `true`, and each run is committed there.
 
 ```
-history/runs/<date>-<env>/   report.html, results.json, summary.json, pictures and videos of the failing checks
+history/runs/<date>-<env>/   report.html, results.json, summary.json, pictures of the failing checks
 history/data/runs.json       one overview line per run (date, themes with issues, failing checks, new, fixed, worst themes)
 history/data/issues.json     the issue tracker: for each theme + layout + check that ever failed: first seen, last seen failing,
                              the check date that confirmed it fixed, reopened count, and a pass/fail dot for every later check
 ```
 
-Pictures of passing checks are deleted after a run; videos are kept for the newest 4 runs. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for where to run this, where to keep history, and what Cloudflare is (and is not) for.
+Pictures of passing checks are deleted after a run; there is no video, only a screenshot taken at the moment of each failing check. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for where to run this, where to keep history, and what Cloudflare is (and is not) for.
 
 ## How the checks work
 

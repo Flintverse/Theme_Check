@@ -8,10 +8,10 @@ function flatten(run) {
   const rows = [];
   (run.themes || []).forEach((t) => {
     if (t.setupFailed) {
-      rows.push({ theme: t.name, layout: 'setup', id: 'SETUP', status: 'fail', detail: `${t.setupFailed.reason || 'setup failed'}: ${t.setupFailed.detail || ''}`.trim(), shots: [], video: null });
+      rows.push({ theme: t.name, layout: 'setup', id: 'SETUP', status: 'fail', detail: `${t.setupFailed.reason || 'setup failed'}: ${t.setupFailed.detail || ''}`.trim(), shots: [] });
       return;
     }
-    (t.passes || []).forEach((p) => p.results.forEach((r) => rows.push({ theme: t.name, layout: r.layout, viewport: p.viewport, id: r.id, status: r.status, detail: r.detail, shots: r.shots || [], video: p.video })));
+    (t.passes || []).forEach((p) => p.results.forEach((r) => rows.push({ theme: t.name, layout: r.layout, viewport: p.viewport, id: r.id, status: r.status, detail: r.detail, shots: r.shots || [] })));
   });
   return rows;
 }

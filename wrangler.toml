@@ -2,8 +2,8 @@ name = "theme-check"
 pages_build_output_dir = "site"
 compatibility_date = "2024-11-01"
 
-# One KV namespace holds the dashboard data and the live progress (two keys: state, progress).
-# Create it first:  npx.cmd wrangler@3 kv namespace create theme-check   then put the id it prints below.
-[[kv_namespaces]]
+# One R2 bucket holds the dashboard data, the live progress and every run's reports and pictures.
+# Create it first:  npx.cmd wrangler@3 r2 bucket create theme-check-data
+[[r2_buckets]]
 binding = "STORE"
-id = "1f89bf1860f1435a990b1fc82743f82b"
+bucket_name = "theme-check-data"

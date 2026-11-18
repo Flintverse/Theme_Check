@@ -1,0 +1,32 @@
+name: deploy dashboard to Cloudflare
+
+# Deploys only the dashboard page and the Cloudflare Functions. Run data and pictures are pushed by the test machine
+# (node src/cli.js sync), not by this workflow. Needs two repository secrets:
+#   CLOUDFLARE_API_TOKEN   (permission: Account > Cloudflare Pages > Edit)
+#   CLOUDFLARE_ACCOUNT_ID
+on:
+  push:
+    branches: [main]
+    paths:
+      - ui/**
+      - functions/**
+      - cf/**
+      - wrangler.toml
+      - .github/workflows/deploy-dashboard.yml
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node src/cli.js publish --dashboard-only
+      - run: npx wrangler@3 pages deploy site --project-name theme-check --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

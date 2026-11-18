@@ -1,5 +1,5 @@
 // After a run: keep only the evidence that matters, write the overview, update the cross-run tracker and the run index,
-// drop old videos, and (optionally) commit the history folder to its own git repo.
+// and (optionally) commit the history folder to its own git repo.
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -28,33 +28,10 @@ function pruneEvidence(runDir, run) {
       if (r.status === 'fail' || r.status === 'error' || r.status === 'review') (r.shots || []).forEach((s) => keep.add(path.normalize(path.join(runDir, s))));
       else r.shots = [];
     });
-    if (p.video) keep.add(path.normalize(path.join(runDir, p.video)));
   }));
   let removed = 0;
-  walk(runDir, []).filter((f) => /\.(png|webm)$/i.test(f)).forEach((f) => { if (!keep.has(path.normalize(f))) { fs.unlinkSync(f); removed++; } });
+  walk(runDir, []).filter((f) => /\.png$/i.test(f)).forEach((f) => { if (!keep.has(path.normalize(f))) { fs.unlinkSync(f); removed++; } });
   return removed;
-}
-
-// Keep videos only for the newest N runs; older runs keep their report, summary and pictures.
-function pruneVideos(root, cfg, checklist, keepRuns) {
-  const dir = runsDir(root, cfg);
-  if (!fs.existsSync(dir) || !keepRuns) return 0;
-  const ids = fs.readdirSync(dir).filter((d) => fs.existsSync(path.join(dir, d, 'results.json'))).sort();
-  let dropped = 0;
-  ids.slice(0, Math.max(0, ids.length - keepRuns)).forEach((id) => {
-    const rd = path.join(dir, id);
-    const run = readJson(path.join(rd, 'results.json'));
-    if (!run) return;
-    let changed = false;
-    (run.themes || []).forEach((t) => (t.passes || []).forEach((p) => {
-      if (p.video) { try { fs.unlinkSync(path.join(rd, p.video)); dropped++; } catch (e) { /* already gone */ } p.video = null; changed = true; }
-    }));
-    if (changed) {
-      writeJson(path.join(rd, 'results.json'), run);
-      fs.writeFileSync(path.join(rd, 'report.html'), render(run, checklist, findPrevious(dir, run.env, run.runId)));
-    }
-  });
-  return dropped;
 }
 
 function gitPublish(dir, message) {
@@ -88,10 +65,9 @@ function finalizeRun({ root, cfg, run, checklist, trackIssues }) {
   index.sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
   writeJson(path.join(data, 'runs.json'), index);
 
-  out.droppedVideos = pruneVideos(root, cfg, checklist, (cfg.archive && cfg.archive.keepVideosForRuns) || 4);
   if (cfg.archive && cfg.archive.git) out.git = gitPublish(archiveRoot(root, cfg), `Theme check ${run.runId}: ${summary.failedChecks} failing checks on ${summary.themesWithIssues}/${summary.themesTested} themes`);
   out.summary = summary;
   return out;
 }
 
-module.exports = { finalizeRun, pruneEvidence, pruneVideos, gitPublish };
+module.exports = { finalizeRun, pruneEvidence, gitPublish };

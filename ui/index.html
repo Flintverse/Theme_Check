@@ -61,7 +61,7 @@ button[disabled]{opacity:.45;cursor:not-allowed}
 pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.45 ui-monospace,monospace;background:var(--na-bg);padding:10px;border-radius:8px;max-height:260px;overflow:auto}
 a{color:var(--accent)}
 .hide{display:none!important}
-.ev{display:grid;gap:6px;min-width:190px;max-width:260px}.ev img{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;cursor:zoom-in;background:var(--na-bg)}.ev video{width:100%;border:1px solid var(--line);border-radius:6px;background:#000}
+.ev{display:grid;gap:6px;min-width:190px;max-width:260px}.ev img{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;cursor:zoom-in;background:var(--na-bg)}
 #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:20;cursor:zoom-out;padding:16px}#lightbox img{max-width:100%;max-height:100%;border-radius:8px}
 svg.chart{width:100%;height:150px}
 .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--fail);animation:pulse 1.4s ease-in-out infinite;vertical-align:middle}
@@ -94,15 +94,19 @@ svg.chart{width:100%;height:150px}
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); });
   }
 
-  function getKey() { try { return localStorage.getItem('tc-key') || ''; } catch (e) { return ''; } }
-  function apiGet(path) { var k = getKey(); return fetch(path, { cache: 'no-store', headers: k ? { 'X-Access-Key': k } : {} }); }
+  var triedCode = false;
+  function apiGet(path) { return fetch(path, { cache: 'no-store', credentials: 'same-origin' }); }
   function askKey(wrong) {
     $('main').innerHTML = '<div class="card" style="max-width:460px;margin:40px auto"><h2>Team access code</h2><p class="muted small">' + (wrong ? 'That code was not accepted. ' : '') + 'Ask the person who set up the dashboard for the code.</p><div class="row"><input type="password" id="k-in" placeholder="Access code" autocomplete="off"><button class="primary" id="k-go">Open</button></div></div>';
-    function go() { try { localStorage.setItem('tc-key', $('k-in').value.trim()); } catch (e) { /* private window */ } location.reload(); }
+    function go() {
+      fetch('/api/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: $('k-in').value.trim() }) })
+        .then(function (r) { if (r.ok) { triedCode = false; location.reload(); } else { triedCode = true; askKey(true); } })
+        .catch(function () { askKey(true); });
+    }
     $('k-go').onclick = go; $('k-in').onkeydown = function (e) { if (e.key === 'Enter') go(); };
   }
   function load() {
-    return apiGet('/api/state').then(function (r) { if (r.status === 401) { askKey(!!getKey()); throw 'key'; } if (!r.ok) throw 0; return r.json(); })
+    return apiGet('/api/state').then(function (r) { if (r.status === 401) { askKey(triedCode); throw 'key'; } if (!r.ok) throw 0; return r.json(); })
       .catch(function (e) { if (e === 'key') throw e; return fetch('api/state.json', { cache: 'no-store' }).then(function (r) { return r.json(); }); })
       .then(function (s) { S = s; draftThemes = null; render(); })
       .catch(function (e) { if (e === 'key') return; $('main').innerHTML = '<div class="card">Could not load data. Run <code>node src/cli.js ui</code> or open the published copy.</div>'; });
@@ -168,7 +172,7 @@ svg.chart{width:100%;height:150px}
       '<div class="card"><h3>Most common issues (themes affected)</h3>' + bars(L.topChecks.map(function (c) { return { label: c.id + ' ' + c.title.slice(0, 40), title: c.title, themes: c.themes }; }), 'label', 'themes') + '</div></div>' +
       '<div class="card"><h3>Trend</h3>' + chart(runs) + '</div>' +
       (L.fixed && L.fixed.length ? '<div class="card"><h3>Fixed since the previous run</h3><div class="small">' + L.fixed.map(function (f) { return '<span class="pill p-fixed">' + esc(f.theme) + ' ' + esc(f.id) + '</span> '; }).join('') + '</div></div>' : '') +
-      '<div class="card"><h3>Full report</h3>' + reportLink(L.runId, 'report.html of ' + esc(L.runId)) + ' <span class="muted small">(pictures and videos of every failing check)</span></div>';
+      '<div class="card"><h3>Full report</h3>' + reportLink(L.runId, 'report.html of ' + esc(L.runId)) + ' <span class="muted small">(a picture of every failing check)</span></div>';
   }
 
   function reportLink(runId, label, anchor) {
@@ -178,10 +182,10 @@ svg.chart{width:100%;height:150px}
   }
   function mediaUrl(run, rel) { return 'runs/' + encodeURIComponent(run) + '/' + String(rel).split('/').map(encodeURIComponent).join('/'); }
   function evidenceHtml(i) {
-    var e = i.evidence; if (!e || (!(e.shots && e.shots.length) && !e.video)) return '<span class="muted small">none kept</span>';
-    if (S.mediaLocal === false) return '<div class="small">' + (S.evidenceUrl ? '<a href="' + esc(S.evidenceUrl) + '" target="_blank" rel="noopener">Open the evidence on Drive</a>' : 'On the test machine') + '<div class="muted">runs/' + esc(e.run) + '/' + esc((e.shots && e.shots[0]) || e.video) + (e.shots && e.shots.length > 1 ? ' (+' + (e.shots.length - 1) + ' more)' : '') + (e.video ? ' + video' : '') + '</div></div>';
+    var e = i.evidence; if (!e || !(e.shots && e.shots.length)) return '<span class="muted small">none kept</span>';
+    if (S.mediaLocal === false) return '<div class="small">' + (S.evidenceUrl ? '<a href="' + esc(S.evidenceUrl) + '" target="_blank" rel="noopener">Open the evidence on Drive</a>' : 'On the test machine') + '<div class="muted">runs/' + esc(e.run) + '/' + esc((e.shots && e.shots[0]) || e.video) + (e.shots && e.shots.length > 1 ? ' (+' + (e.shots.length - 1) + ' more)' : '') + '</div></div>';
     return '<div class="ev">' + (e.shots || []).map(function (sh) { return '<img loading="lazy" data-zoom="1" src="' + esc(mediaUrl(e.run, sh)) + '" alt="' + esc(sh.split('/').pop()) + '">'; }).join('') +
-      (e.video ? '<video controls preload="none" src="' + esc(mediaUrl(e.run, e.video)) + '"></video>' : '') + '</div>';
+      '</div>';
   }
   function dots(it) {
     var h = (it.history || []).slice(-12);
@@ -221,7 +225,7 @@ svg.chart{width:100%;height:150px}
   function vRuns() {
     var runs = S.runs;
     if (!runs.length) return '<div class="card"><h2>No runs yet</h2></div>';
-    return '<div><h2>Runs</h2><p class="muted small">Each run has its own folder: <code>' + esc((S.archiveDir || 'history') + '/runs/&lt;date&gt;-&lt;env&gt;/') + '</code> with the report, results, pictures and videos.</p></div>' +
+    return '<div><h2>Runs</h2><p class="muted small">Each run has its own folder: <code>' + esc((S.archiveDir || 'history') + '/runs/&lt;date&gt;-&lt;env&gt;/') + '</code> with the report, results and picturess.</p></div>' +
       '<div class="card scroll"><table><thead><tr><th>Date</th><th>Env</th><th>Themes tested</th><th>With issues</th><th>Failing checks</th><th>New</th><th>Fixed</th><th>Worst theme</th><th>Open</th></tr></thead><tbody>' +
       runs.map(function (r) {
         var w = r.worstThemes && r.worstThemes[0];

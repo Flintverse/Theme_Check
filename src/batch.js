@@ -57,25 +57,25 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
     const prev = await editor.getPreviewUrl(ed, env, themeId);
     out.setup.previewVia = prev.via;
     prog.event(`${theme.name}: Tab 3 opened via ${prev.via}`);
-    add({ layout: 'panel', viewport: 'desktop', results: [panel], video: null });
+    add({ layout: 'panel', viewport: 'desktop', results: [panel] });
 
     const common = { browser, url: prev.url, outDir, thresholds: cfg.thresholds, keyword: cfg.keyword, cookies: prev.cookies, password: env.storefrontPassword || process.env[`STOREFRONT_PASSWORD_${envName(env)}`] };
     for (const layout of LAYOUTS) {
       log(`  ${theme.name}: layout ${layout}`);
       if (layout !== 'vertical') { step('setup', `Tab 1: switching to ${layout}, then reloading Tab 3`); await design.setLayout(designPage, layout); }
       step('testing', `Checking the ${layout} layout (desktop)`);
-      add(await runPass(Object.assign({}, common, { layout, viewportName: 'desktop', viewport: cfg.viewports.desktop, relDir: `${key}/${layout}-desktop`, videoDir: path.join(outDir, '_video') })));
+      add(await runPass(Object.assign({}, common, { layout, viewportName: 'desktop', viewport: cfg.viewports.desktop, relDir: `${key}/${layout}-desktop` })));
       if (layout === 'offcanvas') {
         // mobile is always off-canvas; the desktop layout is irrelevant on a phone
         step('testing', 'Checking mobile');
-        add(await runPass(Object.assign({}, common, { layout: 'mobile', viewportName: 'mobile', viewport: cfg.viewports.mobile, relDir: `${key}/mobile`, videoDir: path.join(outDir, '_video') })));
+        add(await runPass(Object.assign({}, common, { layout: 'mobile', viewportName: 'mobile', viewport: cfg.viewports.mobile, relDir: `${key}/mobile` })));
       }
     }
     log(`  ${theme.name}: search desktop + mobile`);
     step('testing', 'Checking search suggestion (desktop)');
-    add(await runPass(Object.assign({}, common, { layout: 'search', viewportName: 'desktop', viewport: cfg.viewports.desktop, relDir: `${key}/search-desktop`, videoDir: path.join(outDir, '_video') })));
+    add(await runPass(Object.assign({}, common, { layout: 'search', viewportName: 'desktop', viewport: cfg.viewports.desktop, relDir: `${key}/search-desktop` })));
     step('testing', 'Checking search suggestion (mobile)');
-    add(await runPass(Object.assign({}, common, { layout: 'search', viewportName: 'mobile', viewport: cfg.viewports.mobile, relDir: `${key}/search-mobile`, videoDir: path.join(outDir, '_video') })));
+    add(await runPass(Object.assign({}, common, { layout: 'search', viewportName: 'mobile', viewport: cfg.viewports.mobile, relDir: `${key}/search-mobile` })));
   } catch (e) {
     out.setupFailed = out.setupFailed || { reason: e.reason || 'theme_run_failed', detail: String(e.message).slice(0, 240) };
   } finally {
@@ -138,7 +138,13 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
         const known = opts.skipClean ? library.find((x) => !x.live && x.name && x.name.toLowerCase() === t.name.toLowerCase()) : null;
         if (known) { ids.set(t.name, known.id); log(`  ${t.name}: already in library (${known.id})`); continue; }
         const before = new Set(library.map((x) => x.id));
-        const r = await themesApi.installAndFind(ctx, env, t.name, before);
+        let r = await themesApi.installAndFind(ctx, env, t.name, before);
+        if (!r.ok && r.reason === 'library_full' && !opts.skipClean) {
+          log(`  ${t.name}: the store is full, cleaning and trying once more`);
+          await themesApi.cleanDrafts(ctx, env, log, path.join(runDir, '_debug'));
+          library = await themesApi.listThemes(ctx, env);
+          r = await themesApi.installAndFind(ctx, env, t.name, new Set(library.map((x) => x.id)));
+        }
         if (r.ok) { ids.set(t.name, r.id); library = await themesApi.listThemes(ctx, env); log(`  ${t.name}: installed (${r.id})`); }
         else { run.themes.push({ name: t.name, passes: [], setupFailed: { reason: r.reason, detail: r.detail } }); prog.setTheme(t.name, { status: 'failed', step: `install failed: ${r.reason}` }); log(`  ${t.name}: install failed (${r.reason})`); }
       }
@@ -161,7 +167,6 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
     await browser.close().catch(() => {});
     await ctx.close().catch(() => {});
     saveRun(runDir, run, checklist, prev);
-    try { fs.rmSync(path.join(runDir, '_video'), { recursive: true, force: true }); } catch (e) { /* leftovers */ }
     process.removeListener('SIGINT', onSig);
     process.removeListener('SIGTERM', onSig);
   }
@@ -185,7 +190,7 @@ async function runOnUrl({ root, cfg, url, name, layouts, checklist }) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   const out = { name, passes: [], setup: { previewVia: 'url given on the command line' } };
   try {
-    const common = { browser, url, outDir: runDir, thresholds: cfg.thresholds, keyword: cfg.keyword, videoDir: path.join(runDir, '_video') };
+    const common = { browser, url, outDir: runDir, thresholds: cfg.thresholds, keyword: cfg.keyword };
     const key = keyOf(name);
     for (const layout of layouts) {
       if (layout === 'mobile') out.passes.push(await runPass(Object.assign({}, common, { layout, viewportName: 'mobile', viewport: cfg.viewports.mobile, relDir: `${key}/mobile` })));
@@ -197,7 +202,6 @@ async function runOnUrl({ root, cfg, url, name, layouts, checklist }) {
   } finally { await browser.close().catch(() => {}); }
   const run = { runId, env: 'url', shop: new URL(url).host, startedAt: new Date().toISOString(), themes: [out] };
   saveRun(runDir, run, checklist, null);
-  try { fs.rmSync(path.join(runDir, '_video'), { recursive: true, force: true }); } catch (e) { /* leftovers */ }
   finalizeRun({ root, cfg, run, checklist, trackIssues: false });
   return { run, runDir };
 }

@@ -19,9 +19,18 @@ async function getJson(monitor, p, fetchImpl) {
   return res.json();
 }
 
+// A process started before the variable was set (or by a tool) may not have it: read the Windows user variable.
+function ensureToken() {
+  if (process.env.THEME_CHECK_TOKEN || process.platform !== 'win32') return;
+  const r = spawnSync('reg', ['query', 'HKCU\\Environment', '/v', 'THEME_CHECK_TOKEN'], { encoding: 'utf8' });
+  const m = /THEME_CHECK_TOKEN\s+REG_\w+\s+(\S+)/.exec(r.stdout || '');
+  if (m) process.env.THEME_CHECK_TOKEN = m[1];
+}
+
 // One look at Cloudflare. Returns { changed, steps?, error? }.
 async function checkOnce(root, cfg, opts) {
   const o = Object.assign({ fetchImpl: null, propagateFn: propagate }, opts || {});
+  ensureToken();
   const monitor = sync.syncConfig(cfg);
   if (!monitor || monitor.error) return { changed: false, error: monitor ? monitor.error : 'no cloudflare section' };
   const remote = await getJson(monitor, 'config', o.fetchImpl);
@@ -60,6 +69,7 @@ async function checkOnce(root, cfg, opts) {
 
 // Keeps checking, forever. The Windows task "Theme check agent" starts this at logon.
 async function runAgent(root, cfg, log) {
+  ensureToken();
   const say = log || ((m) => console.log('[' + require('./lib/time').fmtDateTime(new Date()) + ' UTC+7] ' + m));
   const lock = path.join(root, 'history', 'agent.pid');
   try {

@@ -76,11 +76,11 @@ async function doMail(cfg, runId, dry) {
     const { runBatches } = require('./batch');
     const monitor = require('./monitor').forRun(ROOT, cfg);
     const envName = args.env || 'staging';
-    let list = require('./config').themesForEnv(loadThemes(), envName, 10);
+    let list = require('./config').themesForEnv(loadThemes(), envName, cfg.batchSize || 15);
     if (args.batches) { const b = String(args.batches).split(',').map(Number); list = list.filter((t) => b.includes(t.batch)); }
     if (args.themes) {
       const want = String(args.themes).split(',').map((s) => s.trim().toLowerCase());
-      list = require('./config').themesForEnv(list.filter((t) => want.includes(t.name.toLowerCase())), envName, 10); // an explicit list is batched by 10 too
+      list = require('./config').themesForEnv(list.filter((t) => want.includes(t.name.toLowerCase())), envName, cfg.batchSize || 15); // an explicit list is batched too
     }
     if (!list.length) throw new Error('No themes selected (check --batches / --themes against config/themes.json).');
     console.log(`Config: ${cfg._file} | env: ${envName} | themes: ${list.length}`);
@@ -121,7 +121,7 @@ async function doMail(cfg, runId, dry) {
     const ctx = await openAdmin(profileDirFor(ROOT, envName), args.show ? 'show' : 'quiet');
     let live;
     try { live = await themesApi.listThemes(ctx, env); } finally { await ctx.close().catch(() => {}); }
-    const wanted = require('./config').themesForEnv(loadThemes(), envName, 10);
+    const wanted = require('./config').themesForEnv(loadThemes(), envName, cfg.batchSize || 15);
     const r = lib.saveLibrary(ROOT, cfg, envName, wanted, live);
     console.log(envName + ': ' + r.wanted + ' themes wanted, ' + r.inStore + ' in the store library');
     console.log('  present (' + r.present.length + '): ' + r.present.map((p) => p.name + (p.ids.length > 1 ? ' x' + p.ids.length : '')).join(', '));

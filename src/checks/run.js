@@ -61,7 +61,7 @@ async function load(page, url, password) {
   if (gate.blocked) return { ms: Date.now() - t0, blocked: gate.reason };
   await page.waitForSelector('#fdt-container', { timeout: 15000 }).catch(() => {});
   await page.waitForSelector('.search-filters__product-item', { state: 'visible', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(1200);
   await page.addStyleTag({ content: HIDE_PREVIEW_BAR }).catch(() => {});
   return { ms: Date.now() - t0, blocked: null };
 }

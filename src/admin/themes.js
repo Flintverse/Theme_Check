@@ -168,12 +168,13 @@ async function deleteTheme(ctx, env, id, debugDir) {
 
 // The themes page shows the live theme and at most 5 draft themes, newest first, so a store with more themes needs
 // several passes: delete what is shown, read again, until only the live theme is left. The live theme is never touched.
-async function cleanDrafts(ctx, env, log, debugDir) {
+async function cleanDrafts(ctx, env, log, debugDir, protectIds) {
+  const keep = new Set(protectIds || []);
   let deleted = 0;
   const failed = new Set();
   for (let pass = 0; pass < 12; pass++) {
     const lib = await listThemes(ctx, env);
-    const drafts = lib.filter((t) => !t.live && !failed.has(t.id));
+    const drafts = lib.filter((t) => !t.live && !failed.has(t.id) && !keep.has(t.id));
     if (!drafts.length) break;
     for (const t of drafts) {
       const r = await deleteTheme(ctx, env, t.id, debugDir);
@@ -183,4 +184,69 @@ async function cleanDrafts(ctx, env, log, debugDir) {
   return { deleted, failed: Array.from(failed) };
 }
 
-module.exports = { cleanDrafts, listThemes, installTheme, installAndFind, deleteTheme, norm };
+// The id and name of the live (published) theme, read from the themes page.
+async function liveTheme(ctx, env) {
+  const lib = await listThemes(ctx, env);
+  return lib.find((t) => t.live) || null;
+}
+
+// Themes page > the draft theme's "Publish" button > confirm in the modal. Then waits until the page shows that theme as
+// the live one. The store keeps exactly one live theme: publishing one demotes the previous one to a draft.
+async function publishTheme(ctx, env, id, debugDir) {
+  const lib0 = await listThemes(ctx, env);
+  const me = lib0.find((x) => x.id === id);
+  if (!me) return { ok: false, reason: 'theme_not_on_page', detail: 'The theme is not in the library list.' };
+  if (me.live) return { ok: true, note: 'already live' };
+  const page = await ctx.newPage();
+  const diag = { notes: [] };
+  try {
+    await page.goto(`https://admin.shopify.com/store/${env.adminHandle}/themes`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await showWindow(ctx, page);
+    await page.waitForTimeout(8000);
+    let done = false;
+    for (const f of page.frames()) {
+      const link = f.locator(`a[href*="/themes/${id}/editor"]`).first();
+      if (!(await link.count().catch(() => 0))) continue;
+      // the row's button is labelled "Publish: <theme name>"
+      await f.getByRole('button', { name: 'Publish: ' + me.name, exact: true }).first().click({ timeout: 10000 });
+      await page.waitForTimeout(2500);
+      let modal = null;
+      for (let i = 0; i < 20 && !modal; i++) {
+        for (const fr of page.frames()) {
+          const cancel = await fr.getByRole('button', { name: /^Cancel$/ }).count().catch(() => 0);
+          const pub = fr.getByRole('button', { name: /^Publish$/ });
+          if (cancel && (await pub.count().catch(() => 0))) { modal = { fr, pub: pub.last() }; diag.dialog = (await fr.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200); break; }
+        }
+        if (!modal) await page.waitForTimeout(500);
+      }
+      if (!modal) throw new Error('publish_confirm_not_found');
+      await page.waitForTimeout(2000); // same lesson as the delete dialog: the button is wired up a moment after it appears
+      for (let k = 0; k < 4; k++) {
+        await modal.pub.click({ timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(4000);
+        const open = await Promise.all(page.frames().map((fr) => fr.getByRole('button', { name: /^Cancel$/ }).count().catch(() => 0)));
+        if (!open.some((n) => n > 0)) break;
+        diag.notes.push('dialog still open after click ' + (k + 1));
+      }
+      done = true;
+      break;
+    }
+    if (!done) throw new Error('theme_not_on_page');
+    for (let i = 0; i < 18; i++) {
+      await page.waitForTimeout(5000);
+      const live = await liveTheme(ctx, env).catch(() => null);
+      if (live && live.id === id) return { ok: true };
+    }
+    throw new Error('publish_not_confirmed_by_page');
+  } catch (e) {
+    const msg = String(e.message).split(/[\r\n]/)[0].slice(0, 160);
+    if (debugDir) {
+      fs.mkdirSync(debugDir, { recursive: true });
+      await page.screenshot({ path: path.join(debugDir, `publish-${id}.png`) }).catch(() => {});
+      fs.writeFileSync(path.join(debugDir, `publish-${id}.json`), JSON.stringify({ id, error: msg, diag, at: new Date().toISOString() }, null, 2));
+    }
+    return { ok: false, reason: /^(publish_|theme_not)/.test(msg) ? msg : 'publish_failed', detail: msg + (diag.dialog ? ' | dialog: ' + diag.dialog : '') };
+  } finally { await page.close().catch(() => {}); }
+}
+
+module.exports = { publishTheme, liveTheme, cleanDrafts, listThemes, installTheme, installAndFind, deleteTheme, norm };

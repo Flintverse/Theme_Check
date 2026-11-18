@@ -4,13 +4,18 @@
       "adminHandle": "YOUR-STAGING-STORE-HANDLE",
       "shop": "YOUR-STAGING-STORE-HANDLE.myshopify.com",
       "appHandle": "snf-staging-app",
-      "themeStoreShop": "FILL-ME (shop id used by the themes.shopify.com login)"
+      "themeStoreShop": "FILL-ME (shop id used by the themes.shopify.com login)",
+      "pivots": [
+        "Horizon",
+        "Dawn"
+      ]
     },
     "prod": {
       "adminHandle": "YOUR-PROD-STORE-HANDLE",
       "shop": "YOUR-PROD-STORE-HANDLE.myshopify.com",
       "appHandle": "findter-snf",
-      "themeStoreShop": "FILL-ME"
+      "themeStoreShop": "FILL-ME",
+      "pivots": []
     }
   },
   "keyword": "3",
@@ -43,5 +48,14 @@
     "git": false,
     "keepVideosForRuns": 4,
     "note": "dir empty = ./history (git-ignored). Set it to a clone of a PRIVATE data repo and git:true to commit each run there."
+  },
+  "batchSize": 15,
+  "delays": {
+    "afterInstall": 12000,
+    "afterClean": 10000,
+    "beforeEdit": 6000,
+    "afterExit": 4000,
+    "afterPublish": 15000,
+    "installWait": 180000
   }
 }

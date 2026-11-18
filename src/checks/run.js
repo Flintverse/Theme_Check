@@ -1,0 +1,358 @@
+// Runs the checklist on one storefront page, one "pass" = one theme x one layout (or the search / mobile passes).
+// Every result: { id, layout, status: pass|fail|na|review|error, detail, shots: [relative paths] }
+const fs = require('fs');
+const path = require('path');
+const { PNG } = require('pngjs');
+const { measure, measureSuggestion } = require('./measure');
+
+const HIDE_PREVIEW_BAR = '#PBarNextFrame,#preview-bar-iframe,#preview-bar-iframe-wrapper{display:none!important}';
+const NOISE = /monorail|trekkie|shop\.app|google|facebook|doubleclick|clarity|hotjar|sentry|favicon|\.map(\?|$)|shopifycloud\/(shop-js|web-pixels)/i;
+const FINDTER_URL = /fdt-|findter|rdsearch|\/proxy\/|[?&]shop=/i;
+
+function collectors(page) {
+  const st = { console: [], pageErrors: [], bad: [] };
+  page.on('console', (m) => { if (m.type() === 'error' && FINDTER_URL.test((m.location() && m.location().url) || '')) st.console.push(m.text().slice(0, 160)); });
+  page.on('pageerror', (e) => { if (/fdt|findter/i.test(String(e.stack || ''))) st.pageErrors.push(String(e.message).slice(0, 160)); });
+  page.on('response', (r) => { if (r.status() >= 400 && FINDTER_URL.test(r.url()) && !NOISE.test(r.url())) st.bad.push(`${r.status()} ${r.url().slice(0, 100)}`); });
+  return st;
+}
+
+class Pass {
+  constructor({ page, outDir, relDir, layout, viewport, thresholds, keyword }) {
+    Object.assign(this, { page, outDir, relDir, layout, viewport, T: thresholds || {}, keyword: keyword || '3' });
+    this.results = [];
+    this.n = 0;
+  }
+  async shot(name, opts) {
+    const rel = `${this.relDir}/${String(++this.n).padStart(2, '0')}-${name}.png`;
+    const file = path.join(this.outDir, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    await this.page.screenshot(Object.assign({ path: file }, opts || {})).catch(() => {});
+    return rel;
+  }
+  add(id, status, detail, shots) { this.results.push({ id, layout: this.layout, status, detail: detail || '', shots: shots || [] }); }
+  async m(id, shotName, alias) {
+    let r;
+    try { r = await this.page.evaluate(measure, { id: alias || id, opts: this.T }); } catch (e) { r = { status: 'error', detail: String(e.message).slice(0, 160) }; }
+    const shots = r.status === 'na' ? [] : [await this.shot(`${id}-${r.status}`)];
+    this.add(id, r.status, r.detail, shots);
+    return r;
+  }
+}
+
+async function load(page, url) {
+  const t0 = Date.now();
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForSelector('#fdt-container', { timeout: 15000 }).catch(() => {});
+  await page.waitForSelector('.search-filters__product-item', { state: 'visible', timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(1800);
+  await page.addStyleTag({ content: HIDE_PREVIEW_BAR }).catch(() => {});
+  return Date.now() - t0;
+}
+
+async function openDrawer(page) {
+  const found = await page.evaluate(() => {
+    const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
+    const t = Array.from(document.querySelectorAll('#fdt-container .search-filters__open-wrapper, #fdt-container summary, #fdt-container button')).find((e) => vis(e) && /filter/i.test(e.innerText || '') && (e.innerText || '').trim().length < 30);
+    if (!t) return false;
+    t.setAttribute('data-tc-drawer', '1');
+    return true;
+  });
+  if (!found) return false;
+  await page.click('[data-tc-drawer="1"]', { force: true, timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(1200);
+  return true;
+}
+
+async function closeDrawer(page) {
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(500);
+  const x = await page.$('.search-filters__close');
+  if (x && (await x.isVisible().catch(() => false))) { await x.click({ force: true, timeout: 2000 }).catch(() => {}); await page.waitForTimeout(500); }
+}
+
+// Pixel diff of a clipped area: how much of it changed between two screenshots (0..1).
+function changedRatio(a, b) {
+  const A = PNG.sync.read(a), B = PNG.sync.read(b);
+  if (A.width !== B.width || A.height !== B.height) return 1;
+  let diff = 0;
+  for (let i = 0; i < A.data.length; i += 4) {
+    if (Math.abs(A.data[i] - B.data[i]) + Math.abs(A.data[i + 1] - B.data[i + 1]) + Math.abs(A.data[i + 2] - B.data[i + 2]) > 60) diff++;
+  }
+  return diff / (A.width * A.height);
+}
+
+async function checkSelectedState(p) {
+  const { page } = p;
+  const item = page.locator('#fdt-container .fdt-option-item-count:visible').first().locator('xpath=ancestor::li[1]');
+  if (!(await item.count())) { p.add('V-10', 'na', 'No checklist value to click.'); p.add('V-11', 'na', 'No value selected.'); return; }
+  await item.scrollIntoViewIfNeeded().catch(() => {});
+  const text = ((await item.innerText().catch(() => '')) || '').trim().split('\n')[0];
+  const box = await item.boundingBox();
+  if (!box) { p.add('V-10', 'na', 'Value has no box.'); return; }
+  const clip = { x: Math.max(0, box.x), y: Math.max(0, box.y), width: Math.min(box.width, 400), height: box.height };
+  const before = await page.screenshot({ clip }).catch(() => null);
+  const s1 = await p.shot('V-10-before-click');
+  await item.locator('label, .search-filters__filter-option-item-label').first().click({ force: true, timeout: 4000 }).catch(() => item.click({ force: true }));
+  await page.waitForTimeout(2200);
+  const again = page.locator('#fdt-container li').filter({ hasText: text }).filter({ has: page.locator('input[type=checkbox]') }).first();
+  const box2 = (await again.boundingBox().catch(() => null)) || box;
+  const after = await page.screenshot({ clip: { x: Math.max(0, box2.x), y: Math.max(0, box2.y), width: Math.min(box2.width, 400), height: box2.height } }).catch(() => null);
+  const s2 = await p.shot('V-10-after-click');
+  const checked = await again.locator('input[type=checkbox]').first().isChecked().catch(() => null);
+  if (!before || !after) p.add('V-10', 'error', 'Could not take the comparison pictures.', [s1, s2]);
+  else {
+    const ratio = changedRatio(before, after);
+    if (checked === false) p.add('V-10', 'fail', `"${text}": the click did not select the value.`, [s1, s2]);
+    else if (ratio < 0.015) p.add('V-10', 'fail', `"${text}" was selected but the box looks the same as before (only ${(ratio * 100).toFixed(1)}% of its pixels changed): no dark fill or tick.`, [s1, s2]);
+    else p.add('V-10', 'pass', `"${text}" changes visibly when selected (${(ratio * 100).toFixed(0)}% of pixels changed)`, [s2]);
+  }
+  await p.m('V-11', 'chip');
+  // undo, so the next checks see the full list
+  await again.locator('label, .search-filters__filter-option-item-label').first().click({ force: true, timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+}
+
+async function checkHover(p) {
+  const { page } = p;
+  const item = page.locator('#fdt-container .fdt-option-item-count:visible').first().locator('xpath=ancestor::li[1]');
+  if (!(await item.count())) { p.add('V-03', 'na', 'No value with a count to hover.'); return; }
+  await item.scrollIntoViewIfNeeded().catch(() => {});
+  await item.hover({ force: true, timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  await item.evaluate((e) => e.setAttribute('data-tc-hover', '1')).catch(() => {});
+  await p.m('V-03', 'hover');
+  await item.evaluate((e) => e.removeAttribute('data-tc-hover')).catch(() => {});
+  await page.mouse.move(5, 5);
+}
+
+async function checkMerge(p) {
+  const { page } = p;
+  // the group's filter box may be collapsed: open it first
+  const opened = await page.evaluate(() => {
+    const tg = document.querySelector('.fdt-group-value__toggle');
+    if (!tg) return false;
+    const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    if (vis(tg)) { tg.scrollIntoView({ block: 'center' }); return true; }
+    const opt = tg.closest('filter-option, fdt-filter-option');
+    const head = opt && Array.from(opt.querySelectorAll('summary, button, [role=button], [class*="title" i], [class*="header" i]')).find(vis);
+    if (head) head.click();
+    return !!head;
+  });
+  if (opened) await page.waitForTimeout(900);
+  const r = await p.m('V-05', 'merge');
+  if (r.status !== 'pass') return;
+  // clicking the arrow must really expand or collapse
+  const tg = page.locator('.fdt-group-value__toggle:visible').first();
+  const before = await tg.getAttribute('aria-expanded').catch(() => null);
+  await tg.click({ force: true, timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  const after = await tg.getAttribute('aria-expanded').catch(() => null);
+  if (before !== null && before === after) {
+    const last = p.results[p.results.length - 1];
+    last.status = 'fail';
+    last.detail = 'Clicking the arrow did not expand or collapse the group.';
+  }
+  await tg.click({ force: true, timeout: 2000 }).catch(() => {});
+}
+
+async function checkScrollTop(p) {
+  const { page } = p;
+  await page.evaluate(() => window.scrollTo(0, 1600));
+  await page.waitForTimeout(900);
+  await p.m('V-06', 'scroll');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
+}
+
+async function checkChooseOptions(p, id) {
+  const { page } = p;
+  const btn = page.locator('.search-filters__product-item').getByText(/choose options/i).first();
+  if (!(await btn.count())) { p.add(id, 'na', "No product card with 'Choose options' on this collection."); return; }
+  await btn.scrollIntoViewIfNeeded().catch(() => {});
+  const card = btn.locator('xpath=ancestor::*[contains(@class,"search-filters__product-item")][1]');
+  await btn.click({ force: true, timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(1200);
+  await card.evaluate((e) => e.setAttribute('data-tc-card', '1')).catch(() => {});
+  const r = await p.page.evaluate(measure, { id: 'V-09', opts: p.T }).catch((e) => ({ status: 'error', detail: String(e.message) }));
+  p.add(id, r.status, r.detail, [await p.shot(`${id}-choose-options`)]);
+  await card.evaluate((e) => e.removeAttribute('data-tc-card')).catch(() => {});
+  await page.keyboard.press('Escape').catch(() => {});
+}
+
+// Which layout is really on screen. A label that was never applied would make every later result meaningless.
+async function detectLayout(page) {
+  return page.evaluate(() => {
+    const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
+    if (Array.from(document.querySelectorAll('.search-filters__open-wrapper')).some(vis)) return 'offcanvas';
+    const groups = Array.from(document.querySelectorAll('filter-option, fdt-filter-option')).filter(vis);
+    if (groups.length > 1) {
+      const tops = groups.map((g) => g.getBoundingClientRect().top);
+      return Math.max.apply(null, tops) - Math.min.apply(null, tops) < 40 ? 'horizontal' : 'vertical';
+    }
+    return groups.length === 1 ? 'vertical' : 'unknown';
+  });
+}
+
+async function pageChecks(p, c) {
+  const expected = p.viewport === 'mobile' ? 'offcanvas' : p.layout === 'search' ? null : p.layout;
+  if (expected) {
+    const actual = await detectLayout(p.page);
+    p.add('G-04', actual === expected ? 'pass' : 'fail', actual === expected ? '' : `expected the ${expected} layout but the page shows: ${actual}. Check Tab 1 (Filter layout saved?) and reload.`);
+  }
+  await p.m('G-01', 'page');
+  await p.m('G-02', 'page');
+  const bad = c.console.length + c.pageErrors.length + c.bad.length;
+  p.add('G-03', bad ? 'fail' : 'pass', bad ? [...c.pageErrors, ...c.console, ...c.bad].slice(0, 4).join(' | ') : '');
+}
+
+// Desktop layouts: vertical / horizontal / offcanvas
+async function desktopPass(p, c) {
+  const { page } = p;
+  await pageChecks(p, c);
+  let drawerOpen = false;
+  if (p.layout === 'offcanvas') {
+    await p.m('O-01', 'filter-by-button');
+    drawerOpen = await openDrawer(page);
+    await p.m('O-02', 'drawer');
+    await p.m('O-03', 'drawer-x');
+    await p.m('O-04', 'drawer-price');
+  }
+  await p.m('V-01', 'search-boxes');
+  await p.m('V-02', 'count-line');
+  await checkHover(p);
+  const slider = page.locator('#fdt-container fdt-slider').first();
+  if (await slider.count()) { await slider.scrollIntoViewIfNeeded().catch(() => {}); p.add('V-04', 'review', 'Look at the picture: both dots centred on the line.', [await p.shot('V-04-slider')]); }
+  else p.add('V-04', 'na', 'No price slider on this collection.');
+  await checkMerge(p);
+  await p.m('V-07', 'checkbox');
+  await checkSelectedState(p);
+  p.add('V-12', 'review', 'Look at the picture: icons not enlarged or turned into blobs.', [await p.shot('V-12-icons')]);
+  if (drawerOpen) await closeDrawer(page);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await p.m('V-08', 'toolbar');
+  await checkScrollTop(p);
+  await checkChooseOptions(p, 'V-09');
+}
+
+async function mobilePass(p, c) {
+  const { page } = p;
+  await pageChecks(p, c);
+  await p.m('M-01', 'filter-and-sort-button');
+  const opened = await openDrawer(page);
+  const o = await p.page.evaluate(measure, { id: 'O-02', opts: p.T });
+  const x = opened ? await p.page.evaluate(measure, { id: 'O-03', opts: p.T }) : { status: 'fail', detail: 'Filter and sort button not found.' };
+  const sortR = await p.page.evaluate(measure, { id: 'M-02b', opts: p.T });
+  const bad = [o, x, sortR].filter((r) => r.status === 'fail');
+  p.add('M-02', bad.length ? 'fail' : o.status === 'pass' ? 'pass' : 'na', bad.map((r) => r.detail).join('; '), [await p.shot('M-02-drawer')]);
+  await p.m('M-03', 'drawer-price', 'M-03');
+  if (opened) await closeDrawer(page);
+  await checkChooseOptions(p, 'M-04');
+}
+
+async function openThemeSearch(page) {
+  const found = await page.evaluate(() => {
+    const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
+    const base = Array.from(document.querySelectorAll('button, summary, a, [role=button], [data-search-toggle], [data-action*="search" i]')).filter((e) => vis(e) && !e.closest('#fdt-container') && !e.closest('fdt-search-suggestion-widget') && !e.matches('[type=submit], .search__button, [class*=close]'));
+    const label = (e) => ((e.getAttribute('aria-label') || '') + ' ' + (e.getAttribute('title') || '') + ' ' + (e.innerText || '')).trim();
+    const tiers = [
+      (e) => /search/i.test(e.getAttribute('aria-label') || ''),
+      (e) => /search/i.test(String(e.className)) && !/form|input|field/i.test(String(e.className)),
+      (e) => e.tagName === 'A' && /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?search\/?$/.test(new URL(e.href, location.href).pathname),
+      (e) => /search/i.test(label(e)) && label(e).length < 40,
+    ];
+    let pick = null;
+    for (const t of tiers) { pick = base.find(t); if (pick) break; }
+    if (!pick) return false;
+    pick.setAttribute('data-tc-trigger', '1');
+    return true;
+  });
+  if (!found) return false;
+  await page.click('[data-tc-trigger="1"]', { timeout: 4000, force: true }).catch(() => {});
+  await page.waitForTimeout(1200);
+  return true;
+}
+
+async function searchPass(p, c) {
+  const { page } = p;
+  const mobile = p.viewport === 'mobile';
+  const P = mobile ? { shell: 'S-M1', one: 'S-M2', back: 'S-M3', usable: 'S-M4' } : { shell: 'S-01', usable: 'S-02', one: 'S-03', size: 'S-04', stable: 'S-05' };
+  const trig = await openThemeSearch(page);
+  const sShot = await p.shot('search-open');
+  if (!trig) {
+    [P.shell, P.usable, P.one, P.size, P.back, P.stable].filter(Boolean).forEach((id) => p.add(id, 'fail', "Could not find the theme's search icon, so search could not be opened."));
+    return;
+  }
+  const input = page.locator('input[type=search]:visible, input[name=q]:visible').first();
+  const typed = (await input.count()) > 0;
+  if (typed) { await input.click({ timeout: 3000 }).catch(() => {}); await page.keyboard.type(p.keyword, { delay: 150 }); await page.waitForTimeout(2200); }
+  const m = await page.evaluate(measureSuggestion, { opts: p.T });
+  const typedShot = await p.shot('search-typed');
+  p.add(P.usable, typed ? 'pass' : 'fail', typed ? '' : 'Search bar is not visible or cannot take text.', [sShot]);
+  p.add(P.shell, m.widget && m.watermark ? 'pass' : 'fail', m.widget ? (m.watermark ? '' : "Findter's widget shows but the 'Powered by Findter' watermark is missing.") : (m.embedLoaded ? "Findter's search suggestion embed is on but its widget did not appear." : "Findter's Search suggestion embed is not active on this theme (its files are not on the page). Turn it on under App embeds, then retest."), [typedShot]);
+  const both = m.widget && m.themeBoxes > 0;
+  const theirsOnly = !m.widget && m.themeBoxes > 0;
+  p.add(P.one, both ? 'fail' : theirsOnly ? 'fail' : m.widget ? 'pass' : 'na', both ? "Findter's widget and the theme's own suggestion box are shown together." : theirsOnly ? "Only the theme's own search layout is shown (Findter's is not)." : m.widget ? '' : 'Nothing to compare: Findter widget is not showing.', [typedShot]);
+  if (!mobile) {
+    if (!m.widget) p.add(P.size, 'na', 'Widget is not showing.');
+    else {
+      const probs = [];
+      if (m.widthDiffPct > p.T.widthDiffPct) probs.push(`widget is ${m.widgetWidth}px wide, search bar ${m.inputWidth}px (${m.widthDiffPct}% different)`);
+      if (m.gap !== null && m.gap > p.T.searchGapPx) probs.push(`widget starts ${m.gap}px below the search bar`);
+      if (m.gap !== null && m.gap < -4) probs.push(`widget overlaps the search bar by ${-m.gap}px`);
+      if (m.covered) probs.push('widget is covered by another element (for example the header)');
+      if (m.shiftPx > 12) probs.push(`widget is shifted ${m.shiftPx}px sideways from the bar`);
+      p.add(P.size, probs.length ? 'fail' : 'pass', probs.join('; '), [typedShot]);
+    }
+    p.add(P.stable, 'review', 'Look at the picture and video: widget stays put and does not expand over the page.', [typedShot]);
+  } else {
+    p.add(P.back, m.backArrow ? 'pass' : 'fail', m.backArrow ? '' : "No back arrow ('←') next to Findter's search bar.", [typedShot]);
+    if (m.backArrow) {
+      const back = page.locator('fdt-search-suggestion-widget').locator('xpath=ancestor::*[contains(@class,"search") or self::dialog][1]').locator('button, a, [role=button]').filter({ has: page.locator('svg') }).first();
+      await back.click({ force: true, timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(1000);
+      const m2 = await page.evaluate(measureSuggestion, { opts: p.T });
+      const s3 = await p.shot('after-back');
+      if (m2.searchInputs > 1) { const last = p.results.find((r) => r.id === P.back); last.status = 'fail'; last.detail = 'After tapping the back arrow a second search bar (the theme\'s) appeared.'; last.shots.push(s3); }
+    }
+  }
+  void c;
+}
+
+// One pass = one fresh context (so it can have its own video), one set of results.
+async function runPass({ browser, url, layout, viewportName, viewport, outDir, relDir, thresholds, keyword, videoDir }) {
+  const mobile = viewportName === 'mobile';
+  const ctx = await browser.newContext({
+    viewport,
+    isMobile: mobile,
+    hasTouch: mobile,
+    userAgent: mobile ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' : undefined,
+    recordVideo: videoDir ? { dir: videoDir, size: { width: viewport.width, height: viewport.height } } : undefined,
+  });
+  const page = await ctx.newPage();
+  const c = collectors(page);
+  const p = new Pass({ page, outDir, relDir, layout, viewport: viewportName, thresholds, keyword });
+  let video = null;
+  try {
+    const ms = await load(page, url);
+    p.firstCardMs = ms;
+    if (layout === 'search') await searchPass(p, c);
+    else if (mobile) await mobilePass(p, c);
+    else await desktopPass(p, c);
+  } catch (e) {
+    p.add('G-01', 'error', `Pass crashed: ${String(e.message).slice(0, 200)}`);
+  } finally {
+    const v = page.video();
+    await ctx.close();
+    video = v ? await v.path().catch(() => null) : null;
+  }
+  const failed = p.results.some((r) => r.status === 'fail' || r.status === 'error');
+  let videoRel = null;
+  if (video && fs.existsSync(video)) {
+    if (failed) { videoRel = `${relDir}/video.webm`; fs.mkdirSync(path.join(outDir, relDir), { recursive: true }); fs.renameSync(video, path.join(outDir, videoRel)); }
+    else fs.unlinkSync(video);
+  }
+  return { layout, viewport: viewportName, results: p.results, video: videoRel };
+}
+
+module.exports = { runPass, load, collectors, changedRatio };

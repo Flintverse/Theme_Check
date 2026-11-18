@@ -1,0 +1,19 @@
+{
+  "name": "theme-check",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Weekly Findter x Shopify theme compatibility check: installs themes in batches, tests each against a checklist, writes a run-sheet report and mails it.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "login": "node src/cli.js login",
+    "batch": "node src/cli.js batch",
+    "check": "node src/cli.js check",
+    "report": "node src/cli.js report",
+    "mail": "node src/cli.js mail"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16",
+    "playwright-core": "^1.49.0",
+    "pngjs": "^7.0.0"
+  }
+}

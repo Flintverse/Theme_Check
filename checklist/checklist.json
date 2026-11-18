@@ -1,0 +1,484 @@
+{
+  "version": 1,
+  "note": "mode: auto = measured by src/checks/measure.js; review = picture/video captured, a person (or Claude vision) judges. layouts: where it runs. viewport: desktop or mobile.",
+  "items": [
+    {
+      "id": "P-01",
+      "area": "Compatibility panel",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "panel"
+      ],
+      "title": "Close (X) button of the 'Compatibility issue detected' panel",
+      "steps": "In the theme editor, turn on the core embed before choosing a theme in Theme list. Look at the panel's X button.",
+      "expected": "X is visible, normal size, on the same line as the title, not shifted, not a square icon."
+    },
+    {
+      "id": "V-01",
+      "area": "Search boxes",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Magnifier icon and placeholder in 'Search in this collection' and 'Search filter value'",
+      "steps": "Open /collections/all. Look at both search boxes.",
+      "expected": "Icon shown whole (not cropped), not touching the placeholder, placeholder fully shown."
+    },
+    {
+      "id": "V-02",
+      "area": "Filter values",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Value name and count on one line",
+      "steps": "Look at the filter values in each box.",
+      "expected": "Value and count share one line and one vertical centre."
+    },
+    {
+      "id": "V-03",
+      "area": "Filter values",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Count stays readable on hover",
+      "steps": "Hover over a filter value.",
+      "expected": "Count colour has enough contrast against the hover background (not black on black)."
+    },
+    {
+      "id": "V-04",
+      "area": "Price slider",
+      "severity": "minor",
+      "mode": "review",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Slider dots centred on the line",
+      "steps": "Look at the Price slider.",
+      "expected": "Both circle dots sit on the centre of the slider line."
+    },
+    {
+      "id": "V-05",
+      "area": "Merge group",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Expand/collapse arrow and one-line row",
+      "steps": "Find a merged value group. Click its arrow.",
+      "expected": "Arrow is visible; checkbox, group name and arrow share one line; clicking expands and collapses."
+    },
+    {
+      "id": "V-06",
+      "area": "Scroll to top",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Scroll-to-top button",
+      "steps": "Scroll down the page.",
+      "expected": "Findter's round button appears with an arrow inside, and the theme's own button is not shown at the same time."
+    },
+    {
+      "id": "V-07",
+      "area": "Checklist values",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Checkbox square and on one line with name and count",
+      "steps": "Look at a Checklist-type filter.",
+      "expected": "Checkbox is square (not a rectangle) and shares one line with name and count."
+    },
+    {
+      "id": "V-08",
+      "area": "Toolbar",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Filter by, Sort by and the sort dropdown aligned",
+      "steps": "Look at the toolbar above the product grid.",
+      "expected": "'Sort by' label and dropdown share one line, nothing overlaps, no extra white background behind the dropdown."
+    },
+    {
+      "id": "V-09",
+      "area": "Product card",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "'Choose options' panel",
+      "steps": "On a card with 'Choose options', click it.",
+      "expected": "Variant options centred, Add to cart / View full detail stay inside the card, elements not crowded, panel not see-through."
+    },
+    {
+      "id": "V-10",
+      "area": "Filter values",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "A selected Checklist value looks selected",
+      "steps": "Click one value of a Checklist filter.",
+      "expected": "The box turns dark or shows a tick."
+    },
+    {
+      "id": "V-11",
+      "area": "Selected chips",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "Chip 'Option: value' centred, with X",
+      "steps": "After selecting a value, look at the chip.",
+      "expected": "Text centred on one line; X icon present and not shifted."
+    },
+    {
+      "id": "V-12",
+      "area": "Icons",
+      "severity": "major",
+      "mode": "review",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas"
+      ],
+      "title": "App icons render normally",
+      "steps": "Look at the dropdown, magnifier and X icons.",
+      "expected": "Not enlarged, not turned into black blobs or odd shapes."
+    },
+    {
+      "id": "O-01",
+      "area": "Off-canvas",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "offcanvas"
+      ],
+      "title": "'Filter by' button",
+      "steps": "Look at the Filter by button on the left.",
+      "expected": "Icon shown and aligned with the text."
+    },
+    {
+      "id": "O-02",
+      "area": "Off-canvas",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "offcanvas"
+      ],
+      "title": "Drawer opens",
+      "steps": "Click Filter by.",
+      "expected": "A right-side drawer opens with filter options."
+    },
+    {
+      "id": "O-03",
+      "area": "Off-canvas",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "offcanvas"
+      ],
+      "title": "Drawer close (X) button",
+      "steps": "Open the drawer, look at X.",
+      "expected": "Present, normal size, icon centred in its box."
+    },
+    {
+      "id": "O-04",
+      "area": "Off-canvas",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "offcanvas"
+      ],
+      "title": "Price From / To",
+      "steps": "In the open drawer, look at the Price slider.",
+      "expected": "From and To fully shown, not cut with '...'."
+    },
+    {
+      "id": "M-01",
+      "area": "Mobile",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "mobile",
+      "layouts": [
+        "mobile"
+      ],
+      "title": "'Filter and sort' button",
+      "steps": "Open /collections/all at mobile width.",
+      "expected": "Findter's button is shown; the theme's own Filter/Sort are not shown next to it."
+    },
+    {
+      "id": "M-02",
+      "area": "Mobile",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "mobile",
+      "layouts": [
+        "mobile"
+      ],
+      "title": "Drawer, X and Sort options",
+      "steps": "Open the drawer.",
+      "expected": "X present and not shifted; Sort option text aligned left."
+    },
+    {
+      "id": "M-03",
+      "area": "Mobile",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "mobile",
+      "layouts": [
+        "mobile"
+      ],
+      "title": "Price From / To",
+      "steps": "Look at Price in the drawer.",
+      "expected": "From and To fully shown."
+    },
+    {
+      "id": "M-04",
+      "area": "Mobile",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "mobile",
+      "layouts": [
+        "mobile"
+      ],
+      "title": "'Choose options' panel",
+      "steps": "Open Choose options on a card.",
+      "expected": "Same as V-09; cards not too close, nothing spills onto the next card."
+    },
+    {
+      "id": "S-01",
+      "area": "Search desktop",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "search"
+      ],
+      "title": "Findter search suggestion appears",
+      "steps": "Click the header magnifier, type 3.",
+      "expected": "Findter's widget appears with the 'Powered by Findter' watermark."
+    },
+    {
+      "id": "S-02",
+      "area": "Search desktop",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "search"
+      ],
+      "title": "Theme search bar still works",
+      "steps": "Open search, type.",
+      "expected": "Theme's search bar is present and accepts text."
+    },
+    {
+      "id": "S-03",
+      "area": "Search desktop",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "search"
+      ],
+      "title": "Only one suggestion box",
+      "steps": "Type 3 and look.",
+      "expected": "Findter's widget and the theme's suggestion box are not shown together."
+    },
+    {
+      "id": "S-04",
+      "area": "Search desktop",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "search"
+      ],
+      "title": "Widget width and position",
+      "steps": "Compare the widget with the search bar.",
+      "expected": "Same width (within the tolerance), directly under the bar, not covered by the header, not shifted."
+    },
+    {
+      "id": "S-05",
+      "area": "Search desktop",
+      "severity": "major",
+      "mode": "review",
+      "viewport": "desktop",
+      "layouts": [
+        "search"
+      ],
+      "title": "Widget is stable",
+      "steps": "Type, scroll up and down.",
+      "expected": "Widget does not expand over the page or disappear on scroll."
+    },
+    {
+      "id": "S-M1",
+      "area": "Search mobile",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "mobile",
+      "layouts": [
+        "search"
+      ],
+      "title": "Findter search template with watermark",
+      "steps": "Open search on mobile.",
+      "expected": "Findter's template shows, 'Powered by Findter' at the bottom."
+    },
+    {
+      "id": "S-M2",
+      "area": "Search mobile",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "mobile",
+      "layouts": [
+        "search"
+      ],
+      "title": "Only one search layout",
+      "steps": "Open search on mobile.",
+      "expected": "The theme's own search layout is not shown with or instead of Findter's."
+    },
+    {
+      "id": "S-M3",
+      "area": "Search mobile",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "mobile",
+      "layouts": [
+        "search"
+      ],
+      "title": "Back arrow",
+      "steps": "Look for the back arrow next to the bar, then click it.",
+      "expected": "Arrow is visible; click returns to the page without a second search bar."
+    },
+    {
+      "id": "S-M4",
+      "area": "Search mobile",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "mobile",
+      "layouts": [
+        "search"
+      ],
+      "title": "Search bar usable",
+      "steps": "Open search, type.",
+      "expected": "Bar is visible and accepts text."
+    },
+    {
+      "id": "G-01",
+      "area": "General",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas",
+        "mobile"
+      ],
+      "title": "Findter started with products",
+      "steps": "Open /collections/all.",
+      "expected": "Findter container visible, product cards with image and price, no broken images."
+    },
+    {
+      "id": "G-02",
+      "area": "General",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas",
+        "mobile"
+      ],
+      "title": "No sideways scroll",
+      "steps": "Open the page.",
+      "expected": "Page does not scroll horizontally."
+    },
+    {
+      "id": "G-03",
+      "area": "General",
+      "severity": "major",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas",
+        "mobile"
+      ],
+      "title": "No Findter errors",
+      "steps": "Open the page.",
+      "expected": "No JavaScript errors or failed Findter requests."
+    },
+    {
+      "id": "G-04",
+      "area": "General",
+      "severity": "critical",
+      "mode": "auto",
+      "viewport": "desktop",
+      "layouts": [
+        "vertical",
+        "horizontal",
+        "offcanvas",
+        "mobile"
+      ],
+      "title": "The layout on screen is the layout that was set",
+      "steps": "Set the Filter layout in Tab 1, Save, reload Tab 3.",
+      "expected": "The page shows that layout (otherwise the other results do not mean anything)."
+    }
+  ]
+}

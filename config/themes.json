@@ -1,0 +1,237 @@
+{
+  "note": "Theme Store names. Batches of 10 (a store holds max 20 themes). Source: Findter List tuong thich theme (Final).",
+  "themes": [
+    {
+      "name": "Dawn",
+      "batch": 1
+    },
+    {
+      "name": "Horizon",
+      "batch": 1
+    },
+    {
+      "name": "Prestige",
+      "batch": 1
+    },
+    {
+      "name": "Craft",
+      "batch": 1
+    },
+    {
+      "name": "Enterprise",
+      "batch": 1
+    },
+    {
+      "name": "Hyper",
+      "batch": 1
+    },
+    {
+      "name": "Warehouse",
+      "batch": 1
+    },
+    {
+      "name": "Symmetry",
+      "batch": 1
+    },
+    {
+      "name": "Pebble",
+      "batch": 1
+    },
+    {
+      "name": "Release",
+      "batch": 1
+    },
+    {
+      "name": "Palo Alto",
+      "batch": 2
+    },
+    {
+      "name": "Local",
+      "batch": 2
+    },
+    {
+      "name": "Motion",
+      "batch": 2
+    },
+    {
+      "name": "Shapes",
+      "batch": 2
+    },
+    {
+      "name": "Monk",
+      "batch": 2
+    },
+    {
+      "name": "Mono",
+      "batch": 2
+    },
+    {
+      "name": "Impact",
+      "batch": 2
+    },
+    {
+      "name": "Stretch",
+      "batch": 2
+    },
+    {
+      "name": "Atelier",
+      "batch": 2
+    },
+    {
+      "name": "Colorblock",
+      "batch": 2
+    },
+    {
+      "name": "Crave",
+      "batch": 3
+    },
+    {
+      "name": "Dwell",
+      "batch": 3
+    },
+    {
+      "name": "Fabric",
+      "batch": 3
+    },
+    {
+      "name": "Heritage",
+      "batch": 3
+    },
+    {
+      "name": "Origin",
+      "batch": 3
+    },
+    {
+      "name": "Pitch",
+      "batch": 3
+    },
+    {
+      "name": "Publisher",
+      "batch": 3
+    },
+    {
+      "name": "Refresh",
+      "batch": 3
+    },
+    {
+      "name": "Ride",
+      "batch": 3
+    },
+    {
+      "name": "Rise",
+      "batch": 3
+    },
+    {
+      "name": "Ritual",
+      "batch": 4
+    },
+    {
+      "name": "Savor",
+      "batch": 4
+    },
+    {
+      "name": "Sense",
+      "batch": 4
+    },
+    {
+      "name": "Spotlight",
+      "batch": 4
+    },
+    {
+      "name": "Studio",
+      "batch": 4
+    },
+    {
+      "name": "Taste",
+      "batch": 4
+    },
+    {
+      "name": "Tinker",
+      "batch": 4
+    },
+    {
+      "name": "Trade",
+      "batch": 4
+    },
+    {
+      "name": "Vessel",
+      "batch": 4
+    },
+    {
+      "name": "Allure",
+      "batch": 4
+    },
+    {
+      "name": "Be Yours",
+      "batch": 5
+    },
+    {
+      "name": "Broadcast",
+      "batch": 5
+    },
+    {
+      "name": "Concept",
+      "batch": 5
+    },
+    {
+      "name": "Eurus",
+      "batch": 5
+    },
+    {
+      "name": "Expanse",
+      "batch": 5
+    },
+    {
+      "name": "Flawless",
+      "batch": 5
+    },
+    {
+      "name": "Focal",
+      "batch": 5
+    },
+    {
+      "name": "Ignite",
+      "batch": 5
+    },
+    {
+      "name": "Impulse",
+      "batch": 5
+    },
+    {
+      "name": "Next",
+      "batch": 5
+    },
+    {
+      "name": "Noom",
+      "batch": 6
+    },
+    {
+      "name": "Pipeline",
+      "batch": 6
+    },
+    {
+      "name": "Sleek",
+      "batch": 6
+    },
+    {
+      "name": "Stiletto",
+      "batch": 6
+    },
+    {
+      "name": "Vivid",
+      "batch": 6
+    },
+    {
+      "name": "Wonder",
+      "batch": 6
+    },
+    {
+      "name": "Xtra",
+      "batch": 6
+    },
+    {
+      "name": "Maximize",
+      "batch": 6
+    }
+  ]
+}

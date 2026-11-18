@@ -94,11 +94,18 @@ svg.chart{width:100%;height:150px}
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); });
   }
 
+  function getKey() { try { return localStorage.getItem('tc-key') || ''; } catch (e) { return ''; } }
+  function apiGet(path) { var k = getKey(); return fetch(path, { cache: 'no-store', headers: k ? { 'X-Access-Key': k } : {} }); }
+  function askKey(wrong) {
+    $('main').innerHTML = '<div class="card" style="max-width:460px;margin:40px auto"><h2>Team access code</h2><p class="muted small">' + (wrong ? 'That code was not accepted. ' : '') + 'Ask the person who set up the dashboard for the code.</p><div class="row"><input type="password" id="k-in" placeholder="Access code" autocomplete="off"><button class="primary" id="k-go">Open</button></div></div>';
+    function go() { try { localStorage.setItem('tc-key', $('k-in').value.trim()); } catch (e) { /* private window */ } location.reload(); }
+    $('k-go').onclick = go; $('k-in').onkeydown = function (e) { if (e.key === 'Enter') go(); };
+  }
   function load() {
-    return fetch('/api/state', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.json(); })
-      .catch(function () { return fetch('api/state.json', { cache: 'no-store' }).then(function (r) { return r.json(); }); })
+    return apiGet('/api/state').then(function (r) { if (r.status === 401) { askKey(!!getKey()); throw 'key'; } if (!r.ok) throw 0; return r.json(); })
+      .catch(function (e) { if (e === 'key') throw e; return fetch('api/state.json', { cache: 'no-store' }).then(function (r) { return r.json(); }); })
       .then(function (s) { S = s; draftThemes = null; render(); })
-      .catch(function () { $('main').innerHTML = '<div class="card">Could not load data. Run <code>node src/cli.js ui</code> or open the published copy.</div>'; });
+      .catch(function (e) { if (e === 'key') return; $('main').innerHTML = '<div class="card">Could not load data. Run <code>node src/cli.js ui</code> or open the published copy.</div>'; });
   }
 
   function nav() {
@@ -161,12 +168,18 @@ svg.chart{width:100%;height:150px}
       '<div class="card"><h3>Most common issues (themes affected)</h3>' + bars(L.topChecks.map(function (c) { return { label: c.id + ' ' + c.title.slice(0, 40), title: c.title, themes: c.themes }; }), 'label', 'themes') + '</div></div>' +
       '<div class="card"><h3>Trend</h3>' + chart(runs) + '</div>' +
       (L.fixed && L.fixed.length ? '<div class="card"><h3>Fixed since the previous run</h3><div class="small">' + L.fixed.map(function (f) { return '<span class="pill p-fixed">' + esc(f.theme) + ' ' + esc(f.id) + '</span> '; }).join('') + '</div></div>' : '') +
-      '<div class="card"><h3>Open the full report</h3><a href="runs/' + encodeURIComponent(L.runId) + '/report.html">report.html of ' + esc(L.runId) + '</a> <span class="muted small">(pictures and videos of every failing check)</span></div>';
+      '<div class="card"><h3>Full report</h3>' + reportLink(L.runId, 'report.html of ' + esc(L.runId)) + ' <span class="muted small">(pictures and videos of every failing check)</span></div>';
   }
 
+  function reportLink(runId, label, anchor) {
+    if (S.mediaLocal !== false) return '<a href="runs/' + encodeURIComponent(runId) + '/report.html' + (anchor ? '#' + encodeURIComponent(anchor) : '') + '">' + label + '</a>';
+    if (S.evidenceUrl) return '<a href="' + esc(S.evidenceUrl) + '" target="_blank" rel="noopener">' + label + ' (Drive: runs/' + esc(runId) + ')</a>';
+    return '<span class="muted small">' + label + ': on the test machine, history/runs/' + esc(runId) + '/report.html</span>';
+  }
   function mediaUrl(run, rel) { return 'runs/' + encodeURIComponent(run) + '/' + String(rel).split('/').map(encodeURIComponent).join('/'); }
   function evidenceHtml(i) {
     var e = i.evidence; if (!e || (!(e.shots && e.shots.length) && !e.video)) return '<span class="muted small">none kept</span>';
+    if (S.mediaLocal === false) return '<div class="small">' + (S.evidenceUrl ? '<a href="' + esc(S.evidenceUrl) + '" target="_blank" rel="noopener">Open the evidence on Drive</a>' : 'On the test machine') + '<div class="muted">runs/' + esc(e.run) + '/' + esc((e.shots && e.shots[0]) || e.video) + (e.shots && e.shots.length > 1 ? ' (+' + (e.shots.length - 1) + ' more)' : '') + (e.video ? ' + video' : '') + '</div></div>';
     return '<div class="ev">' + (e.shots || []).map(function (sh) { return '<img loading="lazy" data-zoom="1" src="' + esc(mediaUrl(e.run, sh)) + '" alt="' + esc(sh.split('/').pop()) + '">'; }).join('') +
       (e.video ? '<video controls preload="none" src="' + esc(mediaUrl(e.run, e.video)) + '"></video>' : '') + '</div>';
   }
@@ -198,7 +211,7 @@ svg.chart{width:100%;height:150px}
           '<td>' + esc(i.theme) + '<div class="small muted">' + esc(i.env) + '</div></td><td>' + esc(i.layout) + '</td>' +
           '<td><b>' + esc(i.id) + '</b> <span class="pill p-' + esc(i.severity) + '">' + esc(i.severity) + '</span><div class="small">' + esc(i.title) + '</div><div class="small muted">' + esc(String(i.lastDetail || '').slice(0, 160)) + '</div></td>' +
           '<td>' + esc(i.firstSeen) + '</td><td>' + esc(i.lastSeen) + '</td><td>' + (i.fixedOn ? esc(i.fixedOn) + '<div class="small muted">' + esc(i.fixedRun) + '</div>' : '<span class="muted">still open</span>') + '</td>' +
-          '<td>' + (i.history || []).length + '</td><td>' + dots(i) + '<div class="small"><a href="runs/' + encodeURIComponent(i.lastRun) + '/report.html#' + encodeURIComponent(i.id) + '">full report</a></div></td><td>' + evidenceHtml(i) + '</td></tr>';
+          '<td>' + (i.history || []).length + '</td><td>' + dots(i) + '<div class="small">' + reportLink(i.lastRun, 'full report', i.id) + '</div></td><td>' + evidenceHtml(i) + '</td></tr>';
       }).join('') : '<tr><td colspan="9" class="muted">No issues match.</td></tr>') + '</tbody></table></div>';
   }
   function bindIssues() {
@@ -214,7 +227,7 @@ svg.chart{width:100%;height:150px}
         var w = r.worstThemes && r.worstThemes[0];
         return '<tr><td>' + esc(r.date) + '<div class="small muted">' + esc(r.runId) + '</div></td><td>' + esc(r.env) + '</td><td>' + r.themesTested + '/' + r.themesTotal + '</td><td>' + r.themesWithIssues + '</td><td>' + r.failedChecks + '</td><td>' + r.newCount + '</td><td>' + r.fixedCount + '</td>' +
           '<td>' + (w ? esc(w.theme) + ' (' + w.fails + ')' : '-') + '</td>' +
-          '<td><a href="runs/' + encodeURIComponent(r.runId) + '/report.html">report</a> · <a href="runs/' + encodeURIComponent(r.runId) + '/summary.json">summary</a></td></tr>';
+          '<td>' + reportLink(r.runId, 'report') + (S.mediaLocal !== false ? ' · <a href="runs/' + encodeURIComponent(r.runId) + '/summary.json">summary</a>' : '') + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
 
@@ -262,7 +275,7 @@ svg.chart{width:100%;height:150px}
   var progT = null;
   function loadProgress() {
     clearTimeout(progT);
-    return fetch('/api/progress', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).catch(function () { return { none: true }; })
+    return apiGet('/api/progress').then(function (r) { if (!r.ok) throw 0; return r.json(); }).catch(function () { return { none: true }; })
       .then(function (p) {
         var was = P && P.running; P = p;
         if (!S) return;

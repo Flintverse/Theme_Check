@@ -24,6 +24,8 @@ function createServer(root, opts) {
     const data = dataDir(root, cfg);
     return {
       readOnly: false,
+      mediaLocal: true,
+      evidenceUrl: (cfg.evidence && cfg.evidence.driveUrl) || '',
       envs: Object.keys(cfg.envs),
       themes: cfgLib.loadThemes(root),
       schedule: Object.assign({}, sched.loadSchedule(root), { description: sched.describe(sched.loadSchedule(root)) }),

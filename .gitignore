@@ -12,3 +12,4 @@ site/
 config/schedule.json
 test/_ui-*.png
 config/run-scheduled.cmd
+.secrets/

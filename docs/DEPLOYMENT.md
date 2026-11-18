@@ -39,7 +39,7 @@ The editing UI (add or remove themes, change the schedule, start a run) stays on
 
 ## Step-by-step: the Cloudflare monitor
 
-The full guide (R2 bucket, Pages project, token, Access, runner setup, test) is in [CLOUDFLARE.md](CLOUDFLARE.md). Live progress is pushed to it while a run is going, and the finished run's data, reports and pictures are pushed afterwards.
+The setup that is actually deployed (Pages + Workers KV, a team access code, no card needed) is described in [CLOUDFLARE.md](CLOUDFLARE.md). Live progress and the dashboard data go to Cloudflare; pictures, videos and reports stay on the runner and are shared through Google Drive. R2 or Cloudflare Access (both need a payment method) are possible upgrades.
 
 ## Recommended plan
 

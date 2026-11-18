@@ -8,7 +8,8 @@
  * node src/cli.js report --run 2026-11-18-staging      rebuild report.html from results.json
  * node src/cli.js mail   --run 2026-11-18-staging [--dry]  send (or print) the Gmail summary
  * node src/cli.js library --env staging              read the store's theme library and compare it with the theme list
- * node src/cli.js sync   [--run <id>] [--all]          push dashboard data (and reports) to the Cloudflare monitor
+ * node src/cli.js watch                               keep pushing the live progress to Cloudflare (for a run started without the monitor)
+ * node src/cli.js sync                                push the dashboard data to the Cloudflare monitor
  * node src/cli.js ui     [--port 4173]                 local dashboard: themes, schedule, run now, history, issue tracker
  * node src/cli.js publish [--out site] [--with-videos] [--dashboard-only]   read-only copy of the dashboard for a static host
  */
@@ -129,10 +130,13 @@ async function doMail(cfg, runId, dry) {
     return;
   }
 
+  if (cmd === 'watch') { await require('./monitor').watch(ROOT, cfg); return; }
+
   if (cmd === 'sync') {
-    const r = await require('./monitor').syncNow(ROOT, cfg, { run: args.run, all: !!args.all });
+    const r = await require('./monitor').syncNow(ROOT, cfg);
     console.log(r.message);
-    process.exit(r.ok ? 0 : 1);
+    process.exitCode = r.ok ? 0 : 1; // not process.exit(): on Windows it can abort while a fetch is still closing
+    return;
   }
 
   if (cmd === 'ui') {

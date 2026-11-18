@@ -28,6 +28,8 @@ function buildState(root, cfg) {
   const issues = readJson(path.join(data, 'issues.json'), { items: {} });
   return {
     readOnly: true,
+    mediaLocal: false, // pictures, videos and reports are not on Cloudflare
+    evidenceUrl: (cfg.evidence && cfg.evidence.driveUrl) || '',
     envs: Object.keys(cfg.envs),
     themes: cfgLib.loadThemes(root),
     schedule: Object.assign({}, sched.loadSchedule(root), { description: sched.describe(sched.loadSchedule(root)) }),

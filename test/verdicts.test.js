@@ -304,3 +304,48 @@ test('the page: a person who is not an editor sees the boxes but cannot tick the
     await page.close();
   } finally { s.srv.close(); await browser.close(); }
 });
+
+test('reports are drawn with the picture X by the current code: same input = same page, old reports are upgraded, a running run is only pushed', async () => {
+  const r = run('2026-11-18-staging', '2026-11-18', { Dawn: [['V-10', 'fail', 'x']] });
+  assert.strictEqual(render(r, checklist, null), render(r, checklist, null), 'deterministic, so an unchanged report is not uploaded again');
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-up-'));
+  ['config', 'checklist'].forEach((d) => fs.cpSync(path.join(SRC, d), path.join(root, d), { recursive: true }));
+  fs.rmSync(path.join(root, 'config', 'config.local.json'), { force: true });
+  const cfg = { envs: { staging: {} }, cloudflare: { url: 'https://x.dev' } };
+  const mkRun = (id, date, report) => {
+    const d = path.join(root, 'history', 'runs', id);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'results.json'), JSON.stringify(run(id, date, { Dawn: [['V-10', 'fail', 'x']] })));
+    fs.writeFileSync(path.join(d, 'report.html'), report);
+    return d;
+  };
+  const oldDir = mkRun('2026-11-10-staging', '2026-11-10', '<html>old report, no pop-up</html>');
+  const goingDir = mkRun('2026-11-18-staging', '2026-11-18', '<html>old report of the run in progress</html>');
+  fs.mkdirSync(path.join(root, 'history', 'data'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'history', 'data', 'progress.json'), JSON.stringify({ running: true, pid: process.pid, runId: '2026-11-18-staging', themes: [], events: [], totals: {} }));
+  const agent = require('../src/agent');
+  const monitor = require('../src/monitor');
+  const old = process.env.THEME_CHECK_TOKEN; process.env.THEME_CHECK_TOKEN = 'tok-tok-tok-tok-1234';
+  const sent = [];
+  const fetchImpl = async (url, init) => { sent.push({ u: url.split('/api/ingest/')[1], body: init && init.body ? String(init.body) : '' }); return { ok: true }; };
+  try {
+    const refreshed = [];
+    const u = await agent.upgradeReports(root, cfg, { fetchImpl, refresh: ({ runId }) => { refreshed.push(runId); fs.writeFileSync(path.join(root, 'history', 'runs', runId, 'report.html'), render(run(runId, '2026-11-10', { Dawn: [['V-10', 'fail', 'x']] }), checklist, null)); return { ok: true }; } });
+    assert.strictEqual(u.upgraded, 1);
+    assert.deepStrictEqual(refreshed, ['2026-11-10-staging'], 'the finished run is redrawn, the one in progress is left alone');
+    assert.ok(sent.some((s) => s.u === 'media/2026-11-10-staging/report.html'));
+    assert.match(fs.readFileSync(path.join(oldDir, 'report.html'), 'utf8'), /class="lb"/);
+    assert.strictEqual(fs.readFileSync(path.join(goingDir, 'report.html'), 'utf8'), '<html>old report of the run in progress</html>', 'not touched on disk');
+    sent.length = 0;
+    assert.strictEqual((await agent.upgradeReports(root, cfg, { fetchImpl, refresh: () => { throw new Error('should not run again'); } })).upgraded, 0, 'already current: nothing to do');
+
+    // the run in progress: its report is drawn in memory and pushed, once
+    const s = { base: 'https://x.dev', headers: { Authorization: 'Bearer t' } };
+    const seen = new Map();
+    assert.strictEqual(await monitor.pushFreshReport(s, root, cfg, '2026-11-18-staging', seen, fetchImpl), true);
+    const up = sent.find((x) => x.u === 'media/2026-11-18-staging/report.html');
+    assert.match(up.body, /class="x" href="#closed"/);
+    assert.strictEqual(await monitor.pushFreshReport(s, root, cfg, '2026-11-18-staging', seen, fetchImpl), false, 'unchanged: not uploaded again');
+  } finally { if (old === undefined) delete process.env.THEME_CHECK_TOKEN; else process.env.THEME_CHECK_TOKEN = old; }
+});

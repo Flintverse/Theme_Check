@@ -99,6 +99,30 @@ async function syncOverrides(root, cfg, opts) {
   return { changed };
 }
 
+// A finished run whose report.html was written by an older version (no picture pop-up with an X) is drawn again with the
+// current code and uploaded. A run that is still going is left alone: the live push draws its report in memory.
+async function upgradeReports(root, cfg, opts) {
+  const o = Object.assign({ fetchImpl: null, refresh: require('./store/archive').refreshRun }, opts);
+  ensureToken();
+  const monitor = sync.syncConfig(cfg);
+  if (!monitor || monitor.error) return { upgraded: 0 };
+  const { runsDir, dataDir } = require('./store/paths');
+  const dir = runsDir(root, cfg);
+  let going = null;
+  try { const p = require('./store/progress').readProgress(dataDir(root, cfg)); if (p && p.running) going = p.runId; } catch (e) { /* none */ }
+  let upgraded = 0;
+  const ids = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((d) => fs.existsSync(path.join(dir, d, 'results.json'))).sort().slice(-3);
+  for (const runId of ids) {
+    if (runId === going) continue;
+    const rep = path.join(dir, runId, 'report.html');
+    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('class="lb"')) continue;
+    o.refresh({ root, cfg, runId, checklist: cfgLib.loadChecklist(root) });
+    await sync.pushRunFiles(monitor, path.join(dir, runId), runId, { files: [rep], fetchImpl: o.fetchImpl });
+    upgraded++;
+  }
+  return { upgraded };
+}
+
 // Keeps checking, forever. The Windows task "Theme check agent" starts this at logon.
 async function runAgent(root, cfg, log) {
   ensureToken();
@@ -119,6 +143,7 @@ async function runAgent(root, cfg, log) {
       if (Date.now() - lastOv >= 30000) {
         lastOv = Date.now();
         try { const r = await syncOverrides(root, cfg); if (r.changed) say('Manual verdicts synced for ' + r.changed + ' run(s); reports and numbers recalculated'); } catch (e) { say('Verdict sync failed: ' + e.message); }
+        try { const u = await upgradeReports(root, cfg); if (u.upgraded) say('Drew ' + u.upgraded + ' older report(s) again with the picture X button'); } catch (e) { say('Report upgrade failed: ' + e.message); }
       }
       if (Date.now() - last < 60000) return;
       last = Date.now();
@@ -164,4 +189,4 @@ function uninstallAgent() {
   return { ok: true, message: 'Removed from startup. A running agent stops at the next logoff (or end its node process).' };
 }
 
-module.exports = { checkOnce, syncOverrides, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };
+module.exports = { checkOnce, syncOverrides, upgradeReports, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };

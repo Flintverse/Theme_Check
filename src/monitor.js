@@ -18,12 +18,32 @@ function liveRunPusher(s, root, cfg, minMs) {
     busy = true;
     try {
       const runDir = path.join(runsDir(root, cfg), p.runId);
-      const files = sync.liveRunFiles(runDir);
+      const all = sync.liveRunFiles(runDir);
       last = Date.now();
-      if (!files) return null;
-      return await sync.pushRunFiles(s, runDir, p.runId, { files, seen });
+      if (!all) return null;
+      // report.html is drawn here with the current code (a run started by an older version writes the old layout)
+      const files = all.filter((f) => path.basename(f) !== 'report.html');
+      const r = await sync.pushRunFiles(s, runDir, p.runId, { files, seen });
+      await pushFreshReport(s, root, cfg, p.runId, seen);
+      return r;
     } catch (e) { return null; } finally { busy = false; }
   };
+}
+
+// Draws report.html from results.json and the manual verdicts with this version of the code and uploads it when it changed.
+// Nothing is written on this machine, so it never collides with the run that is still saving its own copy.
+async function pushFreshReport(s, root, cfg, runId, seen, fetchImpl) {
+  const dir = runsDir(root, cfg);
+  const runDir = path.join(dir, runId);
+  const run = JSON.parse(fs.readFileSync(path.join(runDir, 'results.json'), 'utf8'));
+  const ovr = require('./store/overrides');
+  const checklist = require('./config').loadChecklist(root);
+  const html = require('./report/html').render(ovr.applyOverrides(run, ovr.readOverrides(runDir)), checklist, require('./report/compare').findPrevious(dir, run.env, runId));
+  const sig = require('crypto').createHash('md5').update(html).digest('hex');
+  if (seen.get('report.html#fresh') === sig) return false;
+  await sync.send(s, 'PUT', `media/${runId}/report.html`, Buffer.from(html), 'application/octet-stream', fetchImpl);
+  seen.set('report.html#fresh', sig);
+  return true;
 }
 
 function forRun(root, cfg) {
@@ -81,4 +101,4 @@ async function watch(root, cfg, opts) {
   await new Promise((resolve) => { const t = setInterval(tick, (opts && opts.everyMs) || 15000); process.on('SIGINT', () => { clearInterval(t); resolve(); }); });
 }
 
-module.exports = { forRun, syncNow, watch };
+module.exports = { forRun, syncNow, watch, pushFreshReport };

@@ -65,6 +65,7 @@ const pill = (s) => `<span class="pill p-${esc(s)}">${esc(String(s).toUpperCase(
 const chg = (c) => (c ? `<span class="chg ${esc(c)}">${esc(c)}</span>` : '');
 
 function render(run, checklist, prevRun) {
+  lbCount = 0; // the same input always gives the same page
   const flat = flatten(run);
   const { rows, fixed } = compare(flat, prevRun ? flatten(prevRun) : null);
   const t = totals(rows);

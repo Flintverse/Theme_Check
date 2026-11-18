@@ -47,12 +47,25 @@ function schtasksArgs(s, root, nodePath) {
   return a;
 }
 
+// The task runs a small .cmd through conhost --headless, so no console window appears while the person works.
+function launcherPath(root) { return path.join(root, 'config', 'run-scheduled.cmd'); }
+function writeLauncher(s, root, nodePath) {
+  const p = launcherPath(root);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, '@echo off\r\n' + 'cd /d "' + root + '"\r\n' + '"' + (nodePath || process.execPath) + '" src/cli.js run --env ' + s.env + (s.batches === 'all' ? '' : ' --batches ' + s.batches) + (s.mail ? ' --mail' : '') + ' >> history\\scheduler.log 2>&1\r\n');
+  return p;
+}
+function taskCommand(root) { return 'conhost.exe --headless "' + launcherPath(root) + '"'; }
+
 function applySchedule(s, root, envNames) {
   const err = validate(s, envNames);
   if (err.length) return { ok: false, error: err.join('; ') };
   if (process.platform !== 'win32') return { ok: false, error: 'Registering a task works on Windows (Task Scheduler). On another OS use cron with the same command.', command: runCommand(s, root) };
   if (!s.enabled) return removeSchedule();
-  const r = spawnSync('schtasks', schtasksArgs(s, root), { encoding: 'utf8' });
+  writeLauncher(s, root);
+  const args = schtasksArgs(s, root);
+  args[args.indexOf('/TR') + 1] = taskCommand(root);
+  const r = spawnSync('schtasks', args, { encoding: 'utf8' });
   return r.status === 0 ? { ok: true, message: (r.stdout || '').trim() } : { ok: false, error: ((r.stderr || r.stdout) || 'schtasks failed').trim() };
 }
 
@@ -75,4 +88,4 @@ function saveSchedule(root, s) {
   fs.writeFileSync(fileFor(root), JSON.stringify(s, null, 2));
 }
 
-module.exports = { loadSchedule, saveSchedule, validate, describe, runCommand, schtasksArgs, applySchedule, removeSchedule, queryTask, DEFAULT, DAYS, TASK };
+module.exports = { launcherPath, writeLauncher, taskCommand, loadSchedule, saveSchedule, validate, describe, runCommand, schtasksArgs, applySchedule, removeSchedule, queryTask, DEFAULT, DAYS, TASK };

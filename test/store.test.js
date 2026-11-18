@@ -133,3 +133,14 @@ test('config: themes are cleaned, de-duplicated and re-batched by 10', () => {
   assert.strictEqual(b[22].batch, 3);
   assert.strictEqual(b.filter((t) => t.enabled !== false && t.batch === 1).length, 10, 'disabled themes do not take a seat');
 });
+
+test('schedule: the task runs a launcher through conhost --headless, so no window appears', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-sch-'));
+  const s = Object.assign({}, sched.DEFAULT, { enabled: true, env: 'staging', batches: '1,2', mail: true });
+  const p = sched.writeLauncher(s, root, 'C:/tools/node.exe');
+  const txt = fs.readFileSync(p, 'utf8');
+  assert.match(txt, /cd \/d "/);
+  assert.ok(txt.includes('"C:/tools/node.exe" src/cli.js run --env staging --batches 1,2 --mail >> history\\scheduler.log 2>&1'), txt);
+  assert.match(sched.taskCommand(root), /^conhost\.exe --headless ".*run-scheduled\.cmd"$/);
+  assert.ok(sched.taskCommand(root).length < 260, 'schtasks accepts at most 261 characters');
+});

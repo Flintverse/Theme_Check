@@ -37,6 +37,10 @@ Short answer: **the check itself cannot run on Cloudflare, and you do not need C
 
 The editing UI (add or remove themes, change the schedule, start a run) stays on the machine that runs the check. It has no login and listens on `127.0.0.1` only, so it must not be exposed. If the team later needs to edit remotely, the options are: edit `config/themes.json` through git, or add a small Pages Functions + KV backend that the runner reads at the start of each run. Not needed now.
 
+## Step-by-step: the Cloudflare monitor
+
+The full guide (R2 bucket, Pages project, token, Access, runner setup, test) is in [CLOUDFLARE.md](CLOUDFLARE.md). Live progress is pushed to it while a run is going, and the finished run's data, reports and pictures are pushed afterwards.
+
 ## Recommended plan
 
 1. **Now:** one always-on Windows PC or VM. `node src/cli.js login --env staging` once, `node src/cli.js ui`, set the schedule in the UI and press Apply. Create a private repo for the history and set `archive`.

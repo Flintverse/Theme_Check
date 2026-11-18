@@ -21,14 +21,11 @@ function copyTree(src, dst, filter) {
   return n;
 }
 
-function publish(root, cfg, outDir, opts) {
-  const out = path.resolve(root, outDir || 'site');
-  fs.rmSync(out, { recursive: true, force: true });
-  fs.mkdirSync(path.join(out, 'api'), { recursive: true });
-  fs.copyFileSync(path.join(root, 'ui', 'index.html'), path.join(out, 'index.html'));
+// The dashboard data as a read-only snapshot (used by `publish` and pushed to Cloudflare by `sync`).
+function buildState(root, cfg) {
   const data = dataDir(root, cfg);
   const issues = readJson(path.join(data, 'issues.json'), { items: {} });
-  const state = {
+  return {
     readOnly: true,
     envs: Object.keys(cfg.envs),
     themes: cfgLib.loadThemes(root),
@@ -40,9 +37,19 @@ function publish(root, cfg, outDir, opts) {
     checklist: cfgLib.loadChecklist(root).items.map((i) => ({ id: i.id, title: i.title, severity: i.severity })),
     publishedAt: new Date().toISOString(),
   };
+}
+
+function publish(root, cfg, outDir, opts) {
+  const out = path.resolve(root, outDir || 'site');
+  fs.rmSync(out, { recursive: true, force: true });
+  fs.mkdirSync(path.join(out, 'api'), { recursive: true });
+  fs.copyFileSync(path.join(root, 'ui', 'index.html'), path.join(out, 'index.html'));
+  const state = buildState(root, cfg);
+  // dashboardOnly: for Cloudflare Pages, where the Functions serve the data and the runs from R2
+  if (opts && opts.dashboardOnly) return { out, runs: state.runs.length, files: 1 };
   fs.writeFileSync(path.join(out, 'api', 'state.json'), JSON.stringify(state));
   const files = copyTree(runsDir(root, cfg), path.join(out, 'runs'), (f) => !/_debug|current-run/.test(f) && (opts && opts.withVideos ? true : !/\.webm$/i.test(f)));
   return { out, runs: state.runs.length, files };
 }
 
-module.exports = { publish };
+module.exports = { publish, buildState };

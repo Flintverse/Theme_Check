@@ -38,7 +38,7 @@ async function installTheme(ctx, env, name) {
     const link = page.getByRole('link', { name: new RegExp(`^Details about the ${esc(name)} theme$`, 'i') }).first();
     try { await link.waitFor({ timeout: 25000 }); } catch (e) { return { ok: false, reason: 'not_in_theme_store' }; }
     await link.click();
-    const btn = page.locator('#details-bar').getByRole('button', { name: /Try theme|Add to theme library|Add theme/i }).first();
+    const btn = page.locator('#details-bar').getByRole('button', { name: /Try theme|Add new copy|Add to theme library|Add theme/i }).first();
     await btn.waitFor({ timeout: 30000 });
     await btn.click();
     let landed = false;
@@ -52,6 +52,8 @@ async function installTheme(ctx, env, name) {
     if (!landed) return { ok: false, reason: 'install_timeout', detail: text.slice(0, 200) };
     await page.waitForTimeout(4000); // the full 3 minute wait for the theme to be usable is done once per batch by the caller
     return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: 'install_error', detail: String(e.message).split(/[\r\n]/)[0].slice(0, 200) };
   } finally { await page.close().catch(() => {}); }
 }
 

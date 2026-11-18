@@ -8,6 +8,7 @@ const cfgLib = require('./config');
 const sched = require('./schedule');
 const { archiveRoot, runsDir, dataDir } = require('./store/paths');
 const { themeStatus } = require('./store/tracker');
+const { readProgress } = require('./store/progress');
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.json': 'application/json', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webm': 'video/webm', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8' };
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return d; } };
@@ -57,11 +58,12 @@ function createServer(root, opts) {
     const args = [path.join(root, 'src', 'cli.js'), 'run', '--env', env];
     if (batches) args.push('--batches', batches);
     if (body.mail) args.push('--mail');
+    if (body.show) args.push('--show');
     if (!o.spawnRun) return { ok: true, dry: true, args };
     const logFile = path.join(archiveRoot(root, cfg), 'data', 'current-run.log');
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
     const out = fs.openSync(logFile, 'w');
-    const child = spawn(process.execPath, args, { cwd: root, stdio: ['ignore', out, out], windowsHide: false });
+    const child = spawn(process.execPath, args, { cwd: root, stdio: ['ignore', out, out], windowsHide: true });
     current = { startedAt: new Date().toISOString(), args: args.slice(2).join(' '), logFile, child };
     child.on('exit', (code) => { fs.appendFileSync(logFile, `\n[finished, exit code ${code}]\n`); current = null; });
     return { ok: true, started: current.args };
@@ -78,6 +80,7 @@ function createServer(root, opts) {
         if (req.headers['x-tc'] !== '1' || (origin && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin))) return send(res, 403, { error: 'forbidden' });
       }
       if (req.method === 'GET' && p === '/api/state') return send(res, 200, state());
+      if (req.method === 'GET' && p === '/api/progress') return send(res, 200, readProgress(dataDir(root, cfg)) || { running: false, none: true });
       if (req.method === 'GET' && p === '/api/run-log') {
         const f = path.join(dataDir(root, cfg), 'current-run.log');
         const txt = fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').slice(-60).join('\n') : '';

@@ -7,8 +7,9 @@
  *                                                     no admin: run the checklist on one storefront URL
  * node src/cli.js report --run 2026-11-18-staging      rebuild report.html from results.json
  * node src/cli.js mail   --run 2026-11-18-staging [--dry]  send (or print) the Gmail summary
+ * node src/cli.js sync   [--run <id>] [--all]          push dashboard data (and reports) to the Cloudflare monitor
  * node src/cli.js ui     [--port 4173]                 local dashboard: themes, schedule, run now, history, issue tracker
- * node src/cli.js publish [--out site] [--with-videos]   read-only copy of the dashboard for a static host
+ * node src/cli.js publish [--out site] [--with-videos] [--dashboard-only]   read-only copy of the dashboard for a static host
  */
 const fs = require('fs');
 const path = require('path');
@@ -17,7 +18,7 @@ const { render } = require('./report/html');
 const { findPrevious } = require('./report/compare');
 const { buildMail, sendMail, attachmentsFor } = require('./mail');
 
-const { runsDir } = require('./store/paths');
+const { runsDir, dataDir } = require('./store/paths');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -71,6 +72,7 @@ async function doMail(cfg, runId, dry) {
 
   if (cmd === 'run') {
     const { runBatches } = require('./batch');
+    const monitor = require('./monitor').forRun(ROOT, cfg);
     const envName = args.env || 'staging';
     let list = loadThemes().filter((t) => t.enabled !== false);
     if (args.batches) { const b = String(args.batches).split(',').map(Number); list = list.filter((t) => b.includes(t.batch)); }
@@ -81,7 +83,7 @@ async function doMail(cfg, runId, dry) {
     }
     if (!list.length) throw new Error('No themes selected (check --batches / --themes against config/themes.json).');
     console.log(`Config: ${cfg._file} | env: ${envName} | themes: ${list.length}`);
-    const { run, runDir } = await runBatches({ root: ROOT, cfg, envName, themeList: list, checklist: loadChecklist(), opts: { skipClean: !!args['skip-clean'], skipWait: !!args['skip-wait'], headless: !!args.headless } });
+    const { run, runDir } = await runBatches({ root: ROOT, cfg, envName, themeList: list, checklist: loadChecklist(), opts: { skipClean: !!args['skip-clean'], skipWait: !!args['skip-wait'], show: !!args.show, onProgress: monitor.onProgress, onFinish: monitor.onFinish } });
     console.log(`\nReport: ${path.join(runDir, 'report.html')}`);
     if (args.mail || args['dry-mail']) await doMail(cfg, run.runId, !!args['dry-mail']);
     return;
@@ -108,6 +110,12 @@ async function doMail(cfg, runId, dry) {
     return;
   }
 
+  if (cmd === 'sync') {
+    const r = await require('./monitor').syncNow(ROOT, cfg, { run: args.run, all: !!args.all });
+    console.log(r.message);
+    process.exit(r.ok ? 0 : 1);
+  }
+
   if (cmd === 'ui') {
     const port = Number(args.port) || 4173;
     await require('./server').listen(ROOT, port);
@@ -116,7 +124,7 @@ async function doMail(cfg, runId, dry) {
   }
 
   if (cmd === 'publish') {
-    const r = require('./publish').publish(ROOT, cfg, args.out, { withVideos: !!args['with-videos'] });
+    const r = require('./publish').publish(ROOT, cfg, args.out, { withVideos: !!args['with-videos'], dashboardOnly: !!args['dashboard-only'] });
     console.log(`Published ${r.runs} run(s), ${r.files} files to ${r.out}`);
     return;
   }

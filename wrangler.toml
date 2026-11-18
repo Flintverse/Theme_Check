@@ -1,0 +1,9 @@
+name = "theme-check"
+pages_build_output_dir = "site"
+compatibility_date = "2024-11-01"
+
+# One R2 bucket holds the dashboard data, the live progress and every run's reports, pictures and videos.
+# Create it first:  npx wrangler r2 bucket create theme-check-data
+[[r2_buckets]]
+binding = "STORE"
+bucket_name = "theme-check-data"

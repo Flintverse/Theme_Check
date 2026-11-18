@@ -12,14 +12,18 @@ class LoginRequired extends Error {
 
 const profileDirFor = (root, env) => path.join(root, `.profile-${env}`);
 
+// headless = true is the normal mode: Chrome runs with no window at all, so nothing pops up on the screen and no focus is
+// taken from what the person is doing. Pass false (the --show flag) only to watch or to log in.
 async function openAdmin(profileDir, headless) {
   fs.mkdirSync(profileDir, { recursive: true });
-  return chromium.launchPersistentContext(profileDir, {
+  const ctx = await chromium.launchPersistentContext(profileDir, {
     channel: 'chrome',
     headless,
     viewport: { width: 1400, height: 950 },
-    args: ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'],
+    args: ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-features=CalculateNativeWinOcclusion'],
   });
+  ctx._tcHeadless = !!headless;
+  return ctx;
 }
 
 // One-time manual login (handles the emailed code). Waits until the store admin is reached.
@@ -37,6 +41,7 @@ async function loginFlow(profileDir, handle) {
 
 // A minimised window renders nothing (screenshots hang): restore it and bring the page forward.
 async function showWindow(ctx, page) {
+  if (ctx._tcHeadless) return; // background mode: never restore or raise a window
   try {
     const cdp = await ctx.newCDPSession(page);
     const { windowId } = await cdp.send('Browser.getWindowForTarget');

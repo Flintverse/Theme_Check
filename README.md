@@ -24,12 +24,13 @@ Nothing secret goes into git: `config.local.json`, `.profile-*/` (saved Shopify 
 
 | Command | What it does |
 |---|---|
-| `node src/cli.js run --env staging --batches 1` | The weekly loop for batch 1 (10 themes). `--batches 1,2,3` for more, `--themes "Dawn,Craft"` for a hand-picked list, `--skip-clean` to keep the library, `--skip-wait` to skip the 3 minute wait. |
+| `node src/cli.js run --env staging --batches 1` | The weekly loop (runs **in the background**: Chrome has no window and takes no focus; add `--show` to watch it) for batch 1 (10 themes). `--batches 1,2,3` for more, `--themes "Dawn,Craft"` for a hand-picked list, `--skip-clean` to keep the library, `--skip-wait` to skip the 3 minute wait. |
 | `node src/cli.js run --env staging --mail` | Same, then mail the result (`--dry-mail` only prints it and writes `mail-preview.html`). |
 | `node src/cli.js check --url <storefront url> --name dawn --layouts vertical,offcanvas,mobile,search` | No admin at all: run the checklist on one storefront URL. This is what was used to calibrate the checks. |
 | `node src/cli.js report --run 2026-11-18-staging` | Rebuild a report from `results.json`. |
 | `node src/cli.js mail --run 2026-11-18-staging [--dry]` | Send (or print) the Gmail summary. |
-| `node src/cli.js ui [--port 4173]` | **The dashboard** on `http://127.0.0.1:4173` (this machine only): Overview (numbers for the latest run, worst themes, most common issues, trend), Issue tracker, Runs, Themes (add / remove / enable / batch), Schedule (daily, weekly or every N days, Apply to Windows Task Scheduler, Run now). |
+| `node src/cli.js sync [--run <id>] [--all]` | Push the dashboard data (and the files of one run, or all runs) to the Cloudflare monitor. See [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md). |
+| `node src/cli.js ui [--port 4173]` | **The dashboard** on `http://127.0.0.1:4173` (this machine only): **Live** (progress of the run in progress, theme by theme), Overview (numbers for the latest run, worst themes, most common issues, trend), Issue tracker, Runs, Themes (add / remove / enable / batch), Schedule (daily, weekly or every N days, Apply to Windows Task Scheduler, Run now). |
 | `node src/cli.js publish [--out site] [--with-videos]` | Builds a **read-only** copy of the dashboard in `site/` for a static host (see docs/DEPLOYMENT.md). |
 | `npm test` | Unit tests: the in-page measurements (good and bad layouts) and the report / compare / mail code. |
 

@@ -29,9 +29,24 @@ Nothing secret goes into git: `config.local.json`, `.profile-*/` (saved Shopify 
 | `node src/cli.js check --url <storefront url> --name dawn --layouts vertical,offcanvas,mobile,search` | No admin at all: run the checklist on one storefront URL. This is what was used to calibrate the checks. |
 | `node src/cli.js report --run 2026-11-18-staging` | Rebuild a report from `results.json`. |
 | `node src/cli.js mail --run 2026-11-18-staging [--dry]` | Send (or print) the Gmail summary. |
+| `node src/cli.js ui [--port 4173]` | **The dashboard** on `http://127.0.0.1:4173` (this machine only): Overview (numbers for the latest run, worst themes, most common issues, trend), Issue tracker, Runs, Themes (add / remove / enable / batch), Schedule (daily, weekly or every N days, Apply to Windows Task Scheduler, Run now). |
+| `node src/cli.js publish [--out site] [--with-videos]` | Builds a **read-only** copy of the dashboard in `site/` for a static host (see docs/DEPLOYMENT.md). |
 | `npm test` | Unit tests: the in-page measurements (good and bad layouts) and the report / compare / mail code. |
 
-Scheduling (Windows, the PC must be on): `schtasks /Create /SC WEEKLY /D MON /ST 07:30 /TN "Theme check" /TR "cmd /c cd /d C:\path\Theme_Check && node src/cli.js run --env staging --batches 1,2,3,4,5,6 --mail >> runs\scheduler.log 2>&1"`. The weekly run needs the saved login from `node src/cli.js login`.
+Scheduling: set it in the dashboard (Schedule tab: daily, weekly, or every N days) and press Apply; it registers the Windows task "Theme check". The PC must be on, and the login from `node src/cli.js login` must still be valid.
+
+## History: where everything is kept
+
+Every finished run is stored in `history/` (git-ignored). To share it, set `archive.dir` to a clone of a **private** repo and `archive.git` to `true`, and each run is committed there.
+
+```
+history/runs/<date>-<env>/   report.html, results.json, summary.json, pictures and videos of the failing checks
+history/data/runs.json       one overview line per run (date, themes with issues, failing checks, new, fixed, worst themes)
+history/data/issues.json     the issue tracker: for each theme + layout + check that ever failed: first seen, last seen failing,
+                             the check date that confirmed it fixed, reopened count, and a pass/fail dot for every later check
+```
+
+Pictures of passing checks are deleted after a run; videos are kept for the newest 4 runs. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for where to run this, where to keep history, and what Cloudflare is (and is not) for.
 
 ## How the checks work
 
@@ -42,6 +57,8 @@ Scheduling (Windows, the PC must be on): `schtasks /Create /SC WEEKLY /D MON /ST
 - The layout on screen is detected and compared with the layout that was set (`G-04`), so a Save that did not take effect cannot silently make every result meaningless.
 
 ## Verified and not yet verified
+
+Verified for the dashboard, history and schedule: 30 automated tests, including the dashboard rendered in Chrome with seeded runs, the issue tracker going open, fixed and reopened, and the read-only published copy. Not yet done: registering the real Windows task (the arguments are tested, the call to the scheduler is not run in tests), a run started from the UI, and pushing history to a private repo.
 
 Verified (run against the owner's research store, anonymous preview URLs, and the unit tests):
 - the storefront passes and all measurements on Colorblock (passes, as the team found) and Allure (reproduces the known bugs: magnifier overlapping the placeholder, scroll-to-top button with no arrow, search bar not usable);
@@ -61,9 +78,11 @@ Keep this list honest: when a step has been run for real, move it up.
 ## Layout
 
 ```
-config/    themes.json (58 themes in batches of 10), config.example.json
+config/    themes.json (58 themes in batches of 10, on/off), config.example.json, schedule.json (created by the UI)
+ui/        index.html (the dashboard)
 checklist/ checklist.json (id, area, severity, steps, expected, auto|review)
-src/       cli.js, batch.js (the loop), admin/ (tabs 1 and 2), checks/ (measure + run), report/, mail.js
+src/       cli.js, batch.js (the loop), admin/ (tabs 1 and 2), checks/ (measure + run), report/, mail.js,
+           store/ (summary, issue tracker, archive), schedule.js, server.js (dashboard), publish.js
 test/      unit tests
 docs/      WORKFLOW.md
 ```

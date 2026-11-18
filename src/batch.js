@@ -9,6 +9,8 @@ const themesApi = require('./admin/themes');
 const { runPass } = require('./checks/run');
 const { render } = require('./report/html');
 const { findPrevious } = require('./report/compare');
+const { runsDir } = require('./store/paths');
+const { finalizeRun } = require('./store/archive');
 
 const LAYOUTS = ['vertical', 'horizontal', 'offcanvas'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,8 +69,8 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
   const env = cfg.envs[envName];
   if (!env) throw new Error(`Unknown env "${envName}" (config has: ${Object.keys(cfg.envs).join(', ')})`);
   const runId = `${stamp()}-${envName}`;
-  const runDir = path.join(root, 'runs', runId);
-  const prev = findPrevious(path.join(root, 'runs'), envName, runId);
+  const runDir = path.join(runsDir(root, cfg), runId);
+  const prev = findPrevious(runsDir(root, cfg), envName, runId);
   const run = { runId, env: envName, shop: env.shop, startedAt: new Date().toISOString(), themes: [] };
   const log = (m) => console.log(m);
   const ctx = await openAdmin(profileDirFor(root, envName), !!opts.headless);
@@ -111,13 +113,14 @@ async function runBatches({ root, cfg, envName, themeList, checklist, opts }) {
     saveRun(runDir, run, checklist, prev);
     try { fs.rmSync(path.join(runDir, '_video'), { recursive: true, force: true }); } catch (e) { /* leftovers */ }
   }
-  return { run, runDir, prev };
+  const fin = finalizeRun({ root, cfg, run, checklist, trackIssues: true });
+  return { run, runDir, prev, fin };
 }
 
 // No admin at all: run the passes on one storefront URL (for development and for a quick look at one theme).
 async function runOnUrl({ root, cfg, url, name, layouts, checklist }) {
   const runId = `${stamp()}-url-${keyOf(name)}`;
-  const runDir = path.join(root, 'runs', runId);
+  const runDir = path.join(runsDir(root, cfg), runId);
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   const out = { name, passes: [], setup: { previewVia: 'url given on the command line' } };
   try {
@@ -134,6 +137,7 @@ async function runOnUrl({ root, cfg, url, name, layouts, checklist }) {
   const run = { runId, env: 'url', shop: new URL(url).host, startedAt: new Date().toISOString(), themes: [out] };
   saveRun(runDir, run, checklist, null);
   try { fs.rmSync(path.join(runDir, '_video'), { recursive: true, force: true }); } catch (e) { /* leftovers */ }
+  finalizeRun({ root, cfg, run, checklist, trackIssues: false });
   return { run, runDir };
 }
 

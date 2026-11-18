@@ -7,6 +7,8 @@
  *                                                     no admin: run the checklist on one storefront URL
  * node src/cli.js report --run 2026-11-18-staging      rebuild report.html from results.json
  * node src/cli.js mail   --run 2026-11-18-staging [--dry]  send (or print) the Gmail summary
+ * node src/cli.js ui     [--port 4173]                 local dashboard: themes, schedule, run now, history, issue tracker
+ * node src/cli.js publish [--out site] [--with-videos]   read-only copy of the dashboard for a static host
  */
 const fs = require('fs');
 const path = require('path');
@@ -14,6 +16,8 @@ const { loginFlow, profileDirFor } = require('./lib/browser');
 const { render } = require('./report/html');
 const { findPrevious } = require('./report/compare');
 const { buildMail, sendMail, attachmentsFor } = require('./mail');
+
+const { runsDir } = require('./store/paths');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -38,14 +42,14 @@ function loadConfig() {
 const loadChecklist = () => JSON.parse(fs.readFileSync(path.join(ROOT, 'checklist', 'checklist.json'), 'utf8'));
 const loadThemes = () => JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'themes.json'), 'utf8')).themes;
 
-function readRun(runId) {
-  const dir = path.join(ROOT, 'runs', runId);
+function readRun(runId, cfg) {
+  const dir = path.join(runsDir(ROOT, cfg), runId);
   return { dir, run: JSON.parse(fs.readFileSync(path.join(dir, 'results.json'), 'utf8')) };
 }
 
 async function doMail(cfg, runId, dry) {
-  const { dir, run } = readRun(runId);
-  const prev = findPrevious(path.join(ROOT, 'runs'), run.env, run.runId);
+  const { dir, run } = readRun(runId, cfg);
+  const prev = findPrevious(runsDir(ROOT, cfg), run.env, run.runId);
   const mail = buildMail(run, loadChecklist(), prev, { reportUrl: process.env.REPORT_BASE_URL ? `${process.env.REPORT_BASE_URL.replace(/\/$/, '')}/${run.runId}/report.html` : '' });
   const res = await sendMail(cfg.mail, mail, attachmentsFor(dir), dry);
   console.log(dry ? `DRY RUN mail:\n  to: ${res.to.join(', ')}\n  subject: ${res.subject}\n  attachments: ${res.attachments.join(', ')}` : `Mail sent (${res.id})`);
@@ -68,7 +72,7 @@ async function doMail(cfg, runId, dry) {
   if (cmd === 'run') {
     const { runBatches } = require('./batch');
     const envName = args.env || 'staging';
-    let list = loadThemes();
+    let list = loadThemes().filter((t) => t.enabled !== false);
     if (args.batches) { const b = String(args.batches).split(',').map(Number); list = list.filter((t) => b.includes(t.batch)); }
     if (args.themes) {
       const want = String(args.themes).split(',').map((s) => s.trim().toLowerCase());
@@ -97,10 +101,23 @@ async function doMail(cfg, runId, dry) {
   }
 
   if (cmd === 'report') {
-    const { dir, run } = readRun(args.run);
-    const prev = findPrevious(path.join(ROOT, 'runs'), run.env, run.runId);
+    const { dir, run } = readRun(args.run, cfg);
+    const prev = findPrevious(runsDir(ROOT, cfg), run.env, run.runId);
     fs.writeFileSync(path.join(dir, 'report.html'), render(run, loadChecklist(), prev));
     console.log(`Rebuilt ${path.join(dir, 'report.html')}`);
+    return;
+  }
+
+  if (cmd === 'ui') {
+    const port = Number(args.port) || 4173;
+    await require('./server').listen(ROOT, port);
+    console.log(`Dashboard: http://127.0.0.1:${port}  (this machine only; Ctrl+C to stop)`);
+    return new Promise(() => {});
+  }
+
+  if (cmd === 'publish') {
+    const r = require('./publish').publish(ROOT, cfg, args.out, { withVideos: !!args['with-videos'] });
+    console.log(`Published ${r.runs} run(s), ${r.files} files to ${r.out}`);
     return;
   }
 

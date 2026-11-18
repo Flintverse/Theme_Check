@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Theme check</title>
+<style>
+:root{--bg:#f5f6f4;--surface:#fff;--ink:#1b2321;--muted:#5b6662;--line:#dfe3df;--accent:#1f6f5c;--accent-ink:#fff;--pass:#1c7a4a;--pass-bg:#e3f3e9;--fail:#b42318;--fail-bg:#fdeceb;--warn:#9a5b00;--warn-bg:#fdf2dc;--na:#4b5563;--na-bg:#eceef0}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#121615;--surface:#1a201e;--ink:#e6ebe8;--muted:#9aa6a1;--line:#2c3532;--accent:#5fc3a7;--accent-ink:#0b1210;--pass:#6fd39c;--pass-bg:#173326;--fail:#ff8a7e;--fail-bg:#3a1a17;--warn:#f2b860;--warn-bg:#3a2a10;--na:#b8c0c8;--na-bg:#262c31}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.bar{max-width:1240px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px}
+.brand{font:600 18px Georgia,serif}
+.badge{font:600 11px ui-monospace,monospace;letter-spacing:.06em;padding:3px 8px;border-radius:999px;background:var(--na-bg);color:var(--na)}
+.badge.local{background:var(--pass-bg);color:var(--pass)}
+nav{display:flex;flex-wrap:wrap;gap:4px;margin-left:auto}
+nav a{padding:6px 12px;border-radius:8px;color:var(--muted);text-decoration:none;font-weight:500}
+nav a.on{background:var(--accent);color:var(--accent-ink)}
+nav a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{max-width:1240px;margin:0 auto;padding:20px 16px 64px;display:grid;gap:18px}
+h2{font:600 20px system-ui;margin:0}
+h3{font:600 13px ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-width:0}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.kpis{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.kpi b{display:block;font:600 28px system-ui;font-variant-numeric:tabular-nums}
+.kpi span{font:12px ui-monospace,monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.kpi small{display:block;color:var(--muted);font-size:12px}
+.good b{color:var(--pass)}.bad b{color:var(--fail)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{font:600 12px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);white-space:nowrap}
+.scroll{overflow-x:auto}
+.pill{font:600 11px ui-monospace,monospace;letter-spacing:.05em;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
+.p-open,.p-fail,.p-critical{background:var(--fail-bg);color:var(--fail)}
+.p-fixed,.p-pass{background:var(--pass-bg);color:var(--pass)}
+.p-major{background:var(--warn-bg);color:var(--warn)}
+.p-minor,.p-na,.p-review{background:var(--na-bg);color:var(--na)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+label.f{display:grid;gap:3px;font:600 12px ui-monospace,monospace;text-transform:uppercase;color:var(--muted)}
+input[type=text],input[type=time],input[type=number],select,textarea{font:15px system-ui;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);min-width:0}
+textarea{width:100%;min-height:90px}
+button{font:600 14px system-ui;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.danger{color:var(--fail)}
+button[disabled]{opacity:.45;cursor:not-allowed}
+.bars{display:grid;gap:6px}
+.bar-row{display:grid;grid-template-columns:minmax(80px,170px) 1fr 34px;gap:8px;align-items:center;font-size:14px}
+.bar-row .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-row .b{height:10px;background:var(--na-bg);border-radius:6px;overflow:hidden}
+.bar-row .b i{display:block;height:100%;background:var(--fail)}
+.bar-row .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.dots{display:inline-flex;gap:3px;vertical-align:middle}
+.dots i{width:10px;height:10px;border-radius:50%;background:var(--na-bg);display:block}
+.dots i.fail{background:var(--fail)}.dots i.pass{background:var(--pass)}
+.muted{color:var(--muted)}.small{font-size:13px}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:14px}
+.ok{background:var(--pass-bg);color:var(--pass);border-radius:8px;padding:8px 12px;font-size:14px}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.45 ui-monospace,monospace;background:var(--na-bg);padding:10px;border-radius:8px;max-height:260px;overflow:auto}
+a{color:var(--accent)}
+.hide{display:none!important}
+svg.chart{width:100%;height:150px}
+@media (max-width:640px){.bar-row{grid-template-columns:90px 1fr 30px}}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <span class="brand">Theme check</span><span id="mode" class="badge">...</span>
+  <nav id="nav"></nav>
+</div></header>
+<main id="main"><div class="card">Loading...</div></main>
+
+<script>
+(function () {
+  var S = null, TAB = 'overview', draftThemes = null, issueFilter = { status: 'open', theme: '', check: '', env: '' };
+  var TABS = [['overview', 'Overview'], ['issues', 'Issue tracker'], ['runs', 'Runs'], ['themes', 'Themes'], ['schedule', 'Schedule']];
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function $(id) { return document.getElementById(id); }
+
+  function api(method, path, body) {
+    return fetch(path, { method: method, headers: { 'Content-Type': 'application/json', 'X-TC': '1' }, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); });
+  }
+
+  function load() {
+    return fetch('/api/state', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .catch(function () { return fetch('api/state.json', { cache: 'no-store' }).then(function (r) { return r.json(); }); })
+      .then(function (s) { S = s; draftThemes = null; render(); })
+      .catch(function () { $('main').innerHTML = '<div class="card">Could not load data. Run <code>node src/cli.js ui</code> or open the published copy.</div>'; });
+  }
+
+  function nav() {
+    $('nav').innerHTML = TABS.map(function (t) { return '<a href="#' + t[0] + '" class="' + (TAB === t[0] ? 'on' : '') + '">' + t[1] + '</a>'; }).join('');
+    var m = $('mode');
+    m.textContent = S.readOnly ? 'READ-ONLY COPY' + (S.publishedAt ? ' · ' + S.publishedAt.slice(0, 10) : '') : 'LOCAL · EDITABLE';
+    m.className = 'badge' + (S.readOnly ? '' : ' local');
+  }
+
+  function render() {
+    if (!S) return;
+    nav();
+    var f = { overview: vOverview, issues: vIssues, runs: vRuns, themes: vThemes, schedule: vSchedule }[TAB] || vOverview;
+    $('main').innerHTML = f();
+    if (TAB === 'themes') bindThemes();
+    if (TAB === 'schedule') bindSchedule();
+    if (TAB === 'issues') bindIssues();
+  }
+
+  function kpi(label, val, sub, cls) { return '<div class="kpi ' + (cls || '') + '"><span>' + esc(label) + '</span><b>' + esc(val) + '</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>'; }
+  function delta(now, prev, lowerIsBetter) {
+    if (prev == null) return '';
+    var d = now - prev; if (d === 0) return 'same as previous run';
+    return (d > 0 ? '+' : '') + d + ' vs previous run';
+  }
+  function bars(items, labelKey, valKey, max) {
+    if (!items.length) return '<div class="muted small">Nothing to show.</div>';
+    var m = max || Math.max.apply(null, items.map(function (i) { return i[valKey]; })) || 1;
+    return '<div class="bars">' + items.map(function (i) {
+      return '<div class="bar-row"><span class="t" title="' + esc(i.title || i[labelKey]) + '">' + esc(i[labelKey]) + '</span><span class="b"><i style="width:' + Math.round(i[valKey] / m * 100) + '%"></i></span><span class="n">' + i[valKey] + '</span></div>';
+    }).join('') + '</div>';
+  }
+
+  function chart(runs) {
+    var r = runs.slice(0, 14).reverse();
+    if (r.length < 2) return '<div class="muted small">The trend appears after two runs.</div>';
+    var W = 600, H = 140, pad = 24, mx = Math.max.apply(null, r.map(function (x) { return Math.max(x.failedChecks, x.themesWithIssues); })) || 1;
+    function pt(v, i) { return (pad + i * (W - 2 * pad) / (r.length - 1)).toFixed(1) + ',' + (H - pad - v / mx * (H - 2 * pad)).toFixed(1); }
+    var l1 = r.map(function (x, i) { return pt(x.failedChecks, i); }).join(' '), l2 = r.map(function (x, i) { return pt(x.themesWithIssues, i); }).join(' ');
+    return '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Failing checks and themes with issues per run"><polyline fill="none" stroke="var(--fail)" stroke-width="2" points="' + l1 + '"/><polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 4" points="' + l2 + '"/>' +
+      r.map(function (x, i) { var p = pt(x.failedChecks, i).split(','); return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3" fill="var(--fail)"><title>' + esc(x.date + ': ' + x.failedChecks + ' failing checks, ' + x.themesWithIssues + ' themes') + '</title></circle>'; }).join('') +
+      '</svg><div class="small muted"><span style="color:var(--fail)">&#9632;</span> failing checks &nbsp; <span style="color:var(--accent)">&#9632;</span> themes with issues &nbsp; (' + esc(r[0].date) + ' to ' + esc(r[r.length - 1].date) + ')</div>';
+  }
+
+  function vOverview() {
+    var runs = S.runs.filter(function (r) { return r.env !== 'url'; });
+    if (!runs.length) return '<div class="card"><h2>No runs yet</h2><p class="muted">Once a run finishes, its date, error counts and worst themes appear here. Start one from the Schedule tab.</p></div>';
+    var L = runs[0], P = runs[1];
+    var open = 0, fixed = 0; Object.keys(S.issues.items || {}).forEach(function (k) { var it = S.issues.items[k]; if (it.env === L.env) { if (it.status === 'open') open++; else fixed++; } });
+    return '<div><h2>Latest run: ' + esc(L.date) + ' <span class="muted small">(' + esc(L.env) + ', ' + esc(L.runId) + ')</span></h2></div>' +
+      '<div class="kpis">' +
+      kpi('Themes tested', L.themesTested, L.themesTotal + ' in the list') +
+      kpi('Themes with issues', L.themesWithIssues, delta(L.themesWithIssues, P && P.themesWithIssues), L.themesWithIssues ? 'bad' : 'good') +
+      kpi('Failing checks', L.failedChecks, delta(L.failedChecks, P && P.failedChecks), L.failedChecks ? 'bad' : 'good') +
+      kpi('New this run', L.newCount, 'not failing last time', L.newCount ? 'bad' : 'good') +
+      kpi('Fixed this run', L.fixedCount, 'failing before, passing now', L.fixedCount ? 'good' : '') +
+      kpi('Open issues (all time)', open, fixed + ' already fixed') + '</div>' +
+      (L.setupFailures && L.setupFailures.length ? '<div class="note">' + L.setupFailures.length + ' theme(s) could not be set up and were not tested: ' + L.setupFailures.map(function (s) { return esc(s.theme) + ' (' + esc(s.reason) + ')'; }).join(', ') + '</div>' : '') +
+      '<div class="grid"><div class="card"><h3>Themes with the most failing checks</h3>' + bars(L.worstThemes, 'theme', 'fails') + '</div>' +
+      '<div class="card"><h3>Most common issues (themes affected)</h3>' + bars(L.topChecks.map(function (c) { return { label: c.id + ' ' + c.title.slice(0, 40), title: c.title, themes: c.themes }; }), 'label', 'themes') + '</div></div>' +
+      '<div class="card"><h3>Trend</h3>' + chart(runs) + '</div>' +
+      (L.fixed && L.fixed.length ? '<div class="card"><h3>Fixed since the previous run</h3><div class="small">' + L.fixed.map(function (f) { return '<span class="pill p-fixed">' + esc(f.theme) + ' ' + esc(f.id) + '</span> '; }).join('') + '</div></div>' : '') +
+      '<div class="card"><h3>Open the full report</h3><a href="runs/' + encodeURIComponent(L.runId) + '/report.html">report.html of ' + esc(L.runId) + '</a> <span class="muted small">(pictures and videos of every failing check)</span></div>';
+  }
+
+  function dots(it) {
+    var h = (it.history || []).slice(-12);
+    return '<span class="dots">' + h.map(function (x) { return '<i class="' + (x.s === 'fail' ? 'fail' : x.s === 'pass' ? 'pass' : '') + '" title="' + esc(x.date + ': ' + x.s) + '"></i>'; }).join('') + '</span>';
+  }
+
+  function vIssues() {
+    var items = Object.keys(S.issues.items || {}).map(function (k) { return S.issues.items[k]; });
+    var themes = Array.from(new Set(items.map(function (i) { return i.theme; }))).sort();
+    var checks = Array.from(new Set(items.map(function (i) { return i.id; }))).sort();
+    var f = issueFilter;
+    var list = items.filter(function (i) { return (!f.status || i.status === f.status) && (!f.theme || i.theme === f.theme) && (!f.check || i.id === f.check) && (!f.env || i.env === f.env); })
+      .sort(function (a, b) { return (a.status === b.status ? 0 : a.status === 'open' ? -1 : 1) || b.lastSeen.localeCompare(a.lastSeen) || a.theme.localeCompare(b.theme); });
+    var openN = items.filter(function (i) { return i.status === 'open'; }).length;
+    function opt(v, cur, label) { return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(label || v) + '</option>'; }
+    return '<div><h2>Issue tracker</h2><p class="muted small">One line per theme + layout + check that has ever failed. Every later check adds a dot: red = still failing, green = passing. The date a line turns Fixed is the check date that confirmed the fix.</p></div>' +
+      '<div class="kpis">' + kpi('Open', openN, '', openN ? 'bad' : 'good') + kpi('Fixed', items.length - openN, 'confirmed by a later check', 'good') + kpi('Ever failed', items.length) + '</div>' +
+      '<div class="card"><div class="row">' +
+      '<label class="f">Status<select id="f-status">' + opt('', f.status, 'All') + opt('open', f.status, 'Open') + opt('fixed', f.status, 'Fixed') + '</select></label>' +
+      '<label class="f">Theme<select id="f-theme">' + opt('', f.theme, 'All themes') + themes.map(function (t) { return opt(t, f.theme); }).join('') + '</select></label>' +
+      '<label class="f">Check<select id="f-check">' + opt('', f.check, 'All checks') + checks.map(function (t) { return opt(t, f.check); }).join('') + '</select></label>' +
+      '<label class="f">Env<select id="f-env">' + opt('', f.env, 'All') + S.envs.map(function (t) { return opt(t, f.env); }).join('') + '</select></label>' +
+      '<span class="muted small">' + list.length + ' shown</span></div></div>' +
+      '<div class="card scroll"><table><thead><tr><th>Status</th><th>Theme</th><th>Layout</th><th>Check</th><th>First seen</th><th>Last seen failing</th><th>Fixed on</th><th>Checks</th><th>Later checks</th></tr></thead><tbody>' +
+      (list.length ? list.map(function (i) {
+        return '<tr><td><span class="pill p-' + i.status + '">' + i.status.toUpperCase() + '</span>' + (i.reopened ? ' <span class="pill p-major" title="came back after being fixed">REOPENED x' + i.reopened + '</span>' : '') + '</td>' +
+          '<td>' + esc(i.theme) + '<div class="small muted">' + esc(i.env) + '</div></td><td>' + esc(i.layout) + '</td>' +
+          '<td><b>' + esc(i.id) + '</b> <span class="pill p-' + esc(i.severity) + '">' + esc(i.severity) + '</span><div class="small">' + esc(i.title) + '</div><div class="small muted">' + esc(String(i.lastDetail || '').slice(0, 160)) + '</div></td>' +
+          '<td>' + esc(i.firstSeen) + '</td><td>' + esc(i.lastSeen) + '</td><td>' + (i.fixedOn ? esc(i.fixedOn) + '<div class="small muted">' + esc(i.fixedRun) + '</div>' : '<span class="muted">still open</span>') + '</td>' +
+          '<td>' + (i.history || []).length + '</td><td>' + dots(i) + '<div class="small"><a href="runs/' + encodeURIComponent(i.lastRun) + '/report.html#' + encodeURIComponent(i.id) + '">report</a></div></td></tr>';
+      }).join('') : '<tr><td colspan="9" class="muted">No issues match.</td></tr>') + '</tbody></table></div>';
+  }
+  function bindIssues() {
+    [['f-status', 'status'], ['f-theme', 'theme'], ['f-check', 'check'], ['f-env', 'env']].forEach(function (p) { $(p[0]).onchange = function (e) { issueFilter[p[1]] = e.target.value; render(); }; });
+  }
+
+  function vRuns() {
+    var runs = S.runs;
+    if (!runs.length) return '<div class="card"><h2>No runs yet</h2></div>';
+    return '<div><h2>Runs</h2><p class="muted small">Each run has its own folder: <code>' + esc((S.archiveDir || 'history') + '/runs/&lt;date&gt;-&lt;env&gt;/') + '</code> with the report, results, pictures and videos.</p></div>' +
+      '<div class="card scroll"><table><thead><tr><th>Date</th><th>Env</th><th>Themes tested</th><th>With issues</th><th>Failing checks</th><th>New</th><th>Fixed</th><th>Worst theme</th><th>Open</th></tr></thead><tbody>' +
+      runs.map(function (r) {
+        var w = r.worstThemes && r.worstThemes[0];
+        return '<tr><td>' + esc(r.date) + '<div class="small muted">' + esc(r.runId) + '</div></td><td>' + esc(r.env) + '</td><td>' + r.themesTested + '/' + r.themesTotal + '</td><td>' + r.themesWithIssues + '</td><td>' + r.failedChecks + '</td><td>' + r.newCount + '</td><td>' + r.fixedCount + '</td>' +
+          '<td>' + (w ? esc(w.theme) + ' (' + w.fails + ')' : '-') + '</td>' +
+          '<td><a href="runs/' + encodeURIComponent(r.runId) + '/report.html">report</a> · <a href="runs/' + encodeURIComponent(r.runId) + '/summary.json">summary</a></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  /* ---- Themes ---- */
+  function themesList() { return draftThemes || S.themes; }
+  function vThemes() {
+    var ro = S.readOnly, list = themesList(), status = {};
+    (S.themeStatus || []).forEach(function (t) { status[t.theme] = (status[t.theme] || 0) + t.open; });
+    var enabled = list.filter(function (t) { return t.enabled !== false; }).length;
+    var batches = Array.from(new Set(list.filter(function (t) { return t.enabled !== false; }).map(function (t) { return t.batch; }))).length;
+    return '<div><h2>Themes</h2><p class="muted small">Names exactly as the Shopify Theme Store shows them. The store holds at most 20 themes, so they are tested in batches of 10: install, test, delete, next batch. ' + enabled + ' enabled in ' + batches + ' batch(es).</p></div>' +
+      (ro ? '<div class="note">Read-only copy. Open the dashboard on the test machine to change the list.</div>' : '') +
+      '<div class="card"><div class="row"><label class="f">Add a theme<input type="text" id="t-new" placeholder="e.g. Impulse" maxlength="60" ' + (ro ? 'disabled' : '') + '></label>' +
+      '<button id="t-add" ' + (ro ? 'disabled' : '') + '>Add</button>' +
+      '<button id="t-bulk-toggle" ' + (ro ? 'disabled' : '') + '>Add many...</button>' +
+      '<button id="t-auto" ' + (ro ? 'disabled' : '') + ' title="Enabled themes, 10 per batch, in list order">Re-batch by 10</button></div>' +
+      '<div id="t-bulk" class="hide" style="margin-top:10px"><textarea id="t-bulk-text" placeholder="One theme per line"></textarea><button id="t-bulk-add">Add these</button></div></div>' +
+      '<div class="card scroll"><table><thead><tr><th>On</th><th>Theme</th><th>Batch</th><th>Open issues</th><th></th></tr></thead><tbody>' +
+      list.map(function (t, i) {
+        return '<tr><td><input type="checkbox" data-i="' + i + '" class="t-on" ' + (t.enabled !== false ? 'checked' : '') + (ro ? ' disabled' : '') + ' aria-label="Test ' + esc(t.name) + '"></td><td>' + esc(t.name) + '</td>' +
+          '<td><input type="number" min="1" max="99" value="' + t.batch + '" data-i="' + i + '" class="t-batch" style="width:70px"' + (ro ? ' disabled' : '') + '></td>' +
+          '<td>' + (status[t.name] ? '<span class="pill p-open">' + status[t.name] + '</span>' : '<span class="muted">-</span>') + '</td>' +
+          '<td><button class="danger t-del" data-i="' + i + '"' + (ro ? ' disabled' : '') + '>Remove</button></td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<div class="row"><button class="primary" id="t-save" ' + (ro || !draftThemes ? 'disabled' : '') + '>Save changes</button><span id="t-msg" class="muted small">' + (draftThemes ? 'Unsaved changes.' : '') + '</span></div>';
+  }
+  function bindThemes() {
+    if (S.readOnly) return;
+    function draft() { if (!draftThemes) draftThemes = S.themes.map(function (t) { return Object.assign({}, t); }); return draftThemes; }
+    function add(names) {
+      var d = draft(), have = d.map(function (t) { return t.name.toLowerCase(); }), maxB = d.reduce(function (m, t) { return Math.max(m, t.batch); }, 1), inLast = d.filter(function (t) { return t.batch === maxB; }).length;
+      names.forEach(function (n) {
+        n = n.replace(/\s+/g, ' ').trim(); if (!n || have.indexOf(n.toLowerCase()) >= 0) return;
+        if (inLast >= 10) { maxB++; inLast = 0; } inLast++; have.push(n.toLowerCase());
+        d.push({ name: n, batch: maxB, enabled: true });
+      });
+      render();
+    }
+    $('t-add').onclick = function () { add([$('t-new').value]); };
+    $('t-new').onkeydown = function (e) { if (e.key === 'Enter') add([$('t-new').value]); };
+    $('t-bulk-toggle').onclick = function () { $('t-bulk').classList.toggle('hide'); };
+    $('t-bulk-add').onclick = function () { add($('t-bulk-text').value.split(/\r?\n/)); };
+    $('t-auto').onclick = function () { var n = 0; draft().forEach(function (t) { if (t.enabled !== false) t.batch = Math.floor(n++ / 10) + 1; }); render(); };
+    Array.prototype.forEach.call(document.querySelectorAll('.t-on'), function (el) { el.onchange = function () { draft()[+el.dataset.i].enabled = el.checked; render(); }; });
+    Array.prototype.forEach.call(document.querySelectorAll('.t-batch'), function (el) { el.onchange = function () { draft()[+el.dataset.i].batch = Math.max(1, +el.value || 1); render(); }; });
+    Array.prototype.forEach.call(document.querySelectorAll('.t-del'), function (el) { el.onclick = function () { var d = draft(); if (confirm('Remove ' + d[+el.dataset.i].name + ' from the list? Its past results and issues stay in the history.')) { d.splice(+el.dataset.i, 1); render(); } }; });
+    $('t-save').onclick = function () { api('PUT', '/api/themes', { themes: draftThemes }).then(function () { return load(); }).then(function () { $('t-msg') && ($('t-msg').textContent = 'Saved.'); }).catch(function (e) { $('t-msg').textContent = 'Could not save: ' + e.message; }); };
+  }
+
+  /* ---- Schedule ---- */
+  function vSchedule() {
+    var s = S.schedule, ro = S.readOnly, d = ro ? 'disabled' : '';
+    function opt(v, cur, l) { return '<option value="' + v + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + esc(l || v) + '</option>'; }
+    var task = S.task;
+    return '<div><h2>Schedule</h2><p class="muted small">How often the full check runs on the test machine. Runs are always the full list, one batch after another.</p></div>' +
+      (ro ? '<div class="note">Read-only copy. Change the schedule on the test machine.</div>' : '') +
+      '<div class="card"><div class="row">' +
+      '<label class="f">Automatic runs<select id="s-enabled" ' + d + '>' + opt('1', s.enabled ? '1' : '0', 'On') + opt('0', s.enabled ? '1' : '0', 'Off') + '</select></label>' +
+      '<label class="f">Frequency<select id="s-mode" ' + d + '>' + opt('daily', s.mode, 'Every day') + opt('weekly', s.mode, 'Every week') + opt('everyNDays', s.mode, 'Every N days') + '</select></label>' +
+      '<label class="f" id="w-day">Weekday<select id="s-weekday" ' + d + '>' + ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(function (x) { return opt(x, s.weekday); }).join('') + '</select></label>' +
+      '<label class="f" id="w-n">Every (days)<input type="number" id="s-n" min="1" max="90" value="' + esc(s.everyDays) + '" style="width:90px" ' + d + '></label>' +
+      '<label class="f">Start time<input type="time" id="s-time" value="' + esc(s.time) + '" ' + d + '></label>' +
+      '<label class="f">Environment<select id="s-env" ' + d + '>' + S.envs.map(function (e) { return opt(e, s.env); }).join('') + '</select></label>' +
+      '<label class="f">Batches<input type="text" id="s-batches" value="' + esc(s.batches) + '" style="width:110px" placeholder="all or 1,2" ' + d + '></label>' +
+      '<label class="f">Mail the result<select id="s-mail" ' + d + '>' + opt('1', s.mail ? '1' : '0', 'Yes') + opt('0', s.mail ? '1' : '0', 'No') + '</select></label>' +
+      '</div><p class="small" id="s-desc"><b>' + esc(s.description) + '</b></p>' +
+      '<div class="row"><button class="primary" id="s-save" ' + d + '>Save schedule</button><button id="s-apply" ' + d + ' title="Creates or updates the Windows scheduled task \'Theme check\'">Apply to Windows Task Scheduler</button><button class="danger" id="s-remove" ' + d + '>Remove the scheduled task</button><span id="s-msg" class="small muted"></span></div>' +
+      '<p class="small muted">Saved is only the setting. <b>Apply</b> registers it with Windows, and the PC must be on and the saved Shopify login valid at that time. ' + (task && task.registered ? 'Task is registered. Next run: ' + esc(task.nextRun || '?') + '. Last result: ' + esc(task.lastResult || '?') + '.' : 'No Windows task registered yet.') + '</p></div>' +
+      '<div class="card"><h3>Run now</h3><div class="row"><label class="f">Environment<select id="r-env" ' + d + '>' + S.envs.map(function (e) { return opt(e, s.env); }).join('') + '</select></label>' +
+      '<label class="f">Batches<input type="text" id="r-batches" value="all" style="width:110px" ' + d + '></label>' +
+      '<label class="f">Mail<select id="r-mail" ' + d + '>' + opt('0', '0', 'No') + opt('1', '0', 'Yes') + '</select></label>' +
+      '<button class="primary" id="r-go" ' + (ro || S.running ? 'disabled' : '') + '>Start a run</button><span id="r-msg" class="small muted">' + (S.running ? 'A run is in progress (started ' + esc(S.running.startedAt) + ').' : '') + '</span></div>' +
+      '<p class="small muted">A run opens Chrome windows on this machine and takes hours for the full list. Keep the PC awake and do not use the Shopify admin in that Chrome profile meanwhile.</p><pre id="r-log" class="hide"></pre></div>';
+  }
+  function bindSchedule() {
+    if (S.readOnly) return;
+    function val() {
+      return { enabled: $('s-enabled').value === '1', mode: $('s-mode').value, weekday: $('s-weekday').value, everyDays: +$('s-n').value, time: $('s-time').value, env: $('s-env').value, batches: $('s-batches').value.trim() || 'all', mail: $('s-mail').value === '1' };
+    }
+    function vis() { $('w-day').classList.toggle('hide', $('s-mode').value !== 'weekly'); $('w-n').classList.toggle('hide', $('s-mode').value !== 'everyNDays'); }
+    vis(); $('s-mode').onchange = vis;
+    function msg(t, bad) { $('s-msg').textContent = t; $('s-msg').style.color = bad ? 'var(--fail)' : 'var(--pass)'; }
+    $('s-save').onclick = function () { api('PUT', '/api/schedule', val()).then(function (r) { $('s-desc').innerHTML = '<b>' + esc(r.description) + '</b>'; msg('Saved. Press Apply to register it with Windows.'); }).catch(function (e) { msg(e.message, true); }); };
+    $('s-apply').onclick = function () { api('PUT', '/api/schedule', val()).then(function () { return api('POST', '/api/schedule/apply'); }).then(function (r) { r.ok ? msg('Applied. ' + (r.message || '')) : msg(r.error || 'Failed', true); return load(); }).catch(function (e) { msg(e.message, true); }); };
+    $('s-remove').onclick = function () { if (confirm('Remove the Windows scheduled task? Automatic runs stop.')) api('POST', '/api/schedule/remove').then(function (r) { r.ok ? msg(r.message) : msg(r.error, true); return load(); }); };
+    $('r-go').onclick = function () {
+      if (!confirm('Start a full run now? It opens Chrome and takes hours.')) return;
+      api('POST', '/api/run', { env: $('r-env').value, batches: $('r-batches').value.trim() || 'all', mail: $('r-mail').value === '1' }).then(function () { $('r-msg').textContent = 'Started.'; poll(); }).catch(function (e) { $('r-msg').textContent = e.message; });
+    };
+    if (S.running) poll();
+  }
+  var pollT = null;
+  function poll() {
+    clearTimeout(pollT);
+    var box = $('r-log'); if (!box) return;
+    api('GET', '/api/run-log').then(function (r) { box.classList.remove('hide'); box.textContent = r.log || '(no output yet)'; box.scrollTop = box.scrollHeight; if (r.running && TAB === 'schedule') pollT = setTimeout(poll, 4000); else if (!r.running) load(); }).catch(function () {});
+  }
+
+  window.addEventListener('hashchange', function () { var h = location.hash.slice(1); if (TABS.some(function (t) { return t[0] === h; })) { TAB = h; render(); } });
+  var h0 = location.hash.slice(1); if (TABS.some(function (t) { return t[0] === h0; })) TAB = h0;
+  load();
+})();
+</script>
+</body>
+</html>

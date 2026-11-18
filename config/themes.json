@@ -3,235 +3,293 @@
   "themes": [
     {
       "name": "Dawn",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Horizon",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Prestige",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Craft",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Enterprise",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Hyper",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Warehouse",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Symmetry",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Pebble",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Release",
-      "batch": 1
+      "batch": 1,
+      "enabled": true
     },
     {
       "name": "Palo Alto",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Local",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Motion",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Shapes",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Monk",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Mono",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Impact",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Stretch",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Atelier",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Colorblock",
-      "batch": 2
+      "batch": 2,
+      "enabled": true
     },
     {
       "name": "Crave",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Dwell",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Fabric",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Heritage",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Origin",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Pitch",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Publisher",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Refresh",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Ride",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Rise",
-      "batch": 3
+      "batch": 3,
+      "enabled": true
     },
     {
       "name": "Ritual",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Savor",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Sense",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Spotlight",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Studio",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Taste",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Tinker",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Trade",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Vessel",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Allure",
-      "batch": 4
+      "batch": 4,
+      "enabled": true
     },
     {
       "name": "Be Yours",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Broadcast",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Concept",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Eurus",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Expanse",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Flawless",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Focal",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Ignite",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Impulse",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Next",
-      "batch": 5
+      "batch": 5,
+      "enabled": true
     },
     {
       "name": "Noom",
-      "batch": 6
+      "batch": 6,
+      "enabled": true
     },
     {
       "name": "Pipeline",
-      "batch": 6
+      "batch": 6,
+      "enabled": true
     },
     {
       "name": "Sleek",
-      "batch": 6
+      "batch": 6,
+      "enabled": true
     },
     {
       "name": "Stiletto",
-      "batch": 6
+      "batch": 6,
+      "enabled": true
     },
     {
       "name": "Vivid",
-      "batch": 6
+      "batch": 6,
+      "enabled": true
     },
     {
       "name": "Wonder",
-      "batch": 6
+      "batch": 6,
+      "enabled": true
     },
     {
       "name": "Xtra",
-      "batch": 6
+      "batch": 6,
+      "enabled": true
     },
     {
       "name": "Maximize",
-      "batch": 6
+      "batch": 6,
+      "enabled": true
     }
   ]
 }

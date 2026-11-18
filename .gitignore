@@ -6,3 +6,8 @@ config/config.local.json
 .env
 *.log
 .layout-restore.json
+# history (runs, tracker, logs) stays out of this public repo; point archive.dir at a private data repo to share it
+history/
+site/
+config/schedule.json
+test/_ui-*.png

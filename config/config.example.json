@@ -15,11 +15,33 @@
   },
   "keyword": "3",
   "collectionPath": "/collections/all",
-  "viewports": { "desktop": { "width": 1366, "height": 768 }, "mobile": { "width": 390, "height": 844 } },
-  "thresholds": { "alignPx": 3, "contrastMin": 3, "widthDiffPct": 10, "searchGapPx": 12 },
+  "viewports": {
+    "desktop": {
+      "width": 1366,
+      "height": 768
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "thresholds": {
+    "alignPx": 3,
+    "contrastMin": 3,
+    "widthDiffPct": 10,
+    "searchGapPx": 12
+  },
   "mail": {
     "from": "FILL-ME@gmail.com",
-    "to": ["team@example.com"],
+    "to": [
+      "team@example.com"
+    ],
     "note": "Password goes in the environment variable GMAIL_APP_PASSWORD (a Gmail app password), never in this file."
+  },
+  "archive": {
+    "dir": "",
+    "git": false,
+    "keepVideosForRuns": 4,
+    "note": "dir empty = ./history (git-ignored). Set it to a clone of a PRIVATE data repo and git:true to commit each run there."
   }
 }

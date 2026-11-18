@@ -14,5 +14,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # the tests drive the Google Chrome that is already installed on the runner
-      - run: npm test
+      # the tests drive a real Google Chrome: make sure the runner has one
+      - run: npx playwright-core install chrome
+      - name: Run the tests (failing test names are printed as annotations)
+        shell: bash
+        run: |
+          set +e
+          npm test > test.log 2>&1
+          code=$?
+          tail -n 60 test.log
+          grep -E "^(✖|not ok)|AssertionError|Error:" test.log | head -25 | while IFS= read -r line; do echo "::error::${line:0:220}"; done
+          exit $code

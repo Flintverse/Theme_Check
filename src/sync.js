@@ -90,7 +90,7 @@ async function pushRunFiles(sync, runDir, runId, opts) {
 function liveRunFiles(runDir) {
   let run;
   try { run = JSON.parse(fs.readFileSync(path.join(runDir, 'results.json'), 'utf8')); } catch (e) { return null; }
-  const files = [path.join(runDir, 'results.json'), path.join(runDir, 'report.html')];
+  const files = [path.join(runDir, 'results.json'), path.join(runDir, 'report.html')]; // (the sender redraws the reports itself)
   (run.themes || []).forEach((t) => (t.passes || []).forEach((p) => (p.results || []).forEach((r) => {
     if (/^(fail|error|review)$/.test(r.status)) (r.shots || []).forEach((s) => files.push(path.join(runDir, s)));
   })));

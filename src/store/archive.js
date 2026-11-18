@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { flatten, findPrevious } = require('../report/compare');
-const { render } = require('../report/html');
+const { writeReports } = require('../report/write');
 const { buildSummary } = require('./summary');
 const { updateTracker, emptyTracker } = require('./tracker');
 const { archiveRoot, runsDir, dataDir } = require('./paths');
@@ -55,7 +55,7 @@ function finalizeRun({ root, cfg, run, checklist, trackIssues }) {
   const prev = findPrevious(dir, run.env, run.runId);
   writeJson(path.join(runDir, 'results.json'), run); // the script's own results, untouched
   const eff = ovr.applyOverrides(run, ovr.readOverrides(runDir)); // with the manual verdicts on top
-  fs.writeFileSync(path.join(runDir, 'report.html'), render(eff, checklist, prev));
+  writeReports(runDir, eff, checklist, prev);
   const summary = buildSummary(eff, checklist, prev);
   writeJson(path.join(runDir, 'summary.json'), summary);
 
@@ -83,7 +83,7 @@ function refreshRun({ root, cfg, runId, checklist }) {
   if (!run) return { ok: false, reason: 'no results.json for ' + runId };
   const prev = findPrevious(dir, run.env, runId);
   const eff = ovr.applyOverrides(run, ovr.readOverrides(runDir));
-  fs.writeFileSync(path.join(runDir, 'report.html'), render(eff, checklist, prev));
+  writeReports(runDir, eff, checklist, prev);
   const summary = buildSummary(eff, checklist, prev);
   writeJson(path.join(runDir, 'summary.json'), summary);
   const data = dataDir(root, cfg);

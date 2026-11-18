@@ -222,8 +222,10 @@ a.brand{color:inherit;text-decoration:none}
       '<div class="card"><h3>Full report</h3>' + reportLink(L.runId, 'report.html of ' + esc(L.runId)) + ' <span class="muted small">(a picture of every failing check)</span></div>';
   }
 
-  function reportLink(runId, label, anchor) {
-    if (S.mediaLocal !== false) return '<a href="runs/' + encodeURIComponent(runId) + '/report.html' + (anchor ? '#' + encodeURIComponent(anchor) : '') + '">' + label + '</a>';
+  // file = report.html (all themes) or report-<theme>.html (one theme)
+  function themeReportFile(name) { return 'report-' + String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.html'; }
+  function reportLink(runId, label, anchor, file) {
+    if (S.mediaLocal !== false) return '<a href="runs/' + encodeURIComponent(runId) + '/' + (file || 'report.html') + (anchor ? '#' + encodeURIComponent(anchor) : '') + '">' + label + '</a>';
     if (S.evidenceUrl) return '<a href="' + esc(S.evidenceUrl) + '" target="_blank" rel="noopener">' + label + ' (Drive: runs/' + esc(runId) + ')</a>';
     return '<span class="muted small">' + label + ': on the test machine, history/runs/' + esc(runId) + '/report.html</span>';
   }
@@ -318,6 +320,7 @@ a.brand{color:inherit;text-decoration:none}
       (stale ? '<div class="note">No update for over 90 seconds. A step may be waiting on Shopify (the editor save waits up to a minute). If this stays, check the machine.</div>' : '') +
       '<div class="card"><div class="row" style="justify-content:space-between"><b>' + c.done + ' of ' + c.total + ' themes done</b><span class="muted small">' + pct + '%' + (P.etaMinutes != null ? ' &middot; about ' + P.etaMinutes + ' min left (estimate)' : '') + ' &middot; elapsed ' + fmt(end - new Date(P.startedAt).getTime()) + '</span></div><div class="pbar" style="margin-top:8px" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
       '<p style="margin:12px 0 0"><b>Now:</b> ' + (P.running ? (cur ? esc(cur.theme) + ' &ndash; ' + esc(cur.step || cur.status) + ' <span class="muted small">(this step ' + ago(cur.since) + ')</span>' : esc(P.step || P.phase)) : esc(P.phase)) + '</p></div>' +
+      '<div class="card"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 4px">Full theme report</h3><span class="muted small">Every theme of this run in one page. It follows the run as themes finish.</span></div>' + reportLink(P.runId, '<span class="navbtn">Open the full theme report &middot; ' + esc(tsLocal(P.startedAt).slice(0, 10)) + '</span>') + '</div></div>' +
       '<div class="kpis">' + kpi('Passed so far', Q.totals.pass, '', 'good') + kpi('Failed so far', Q.totals.fail, '', Q.totals.fail ? 'bad' : 'good') + kpi('To review', Q.totals.review) + (Q.totals.skip ? kpi('Skipped by hand', Q.totals.skip) : '') + kpi('Not testable', Q.totals.na) + kpi('Could not set up', c.failedSetup, '', c.failedSetup ? 'bad' : '') + '</div>' +
       '<div class="card scroll"><h3>Themes</h3><p class="muted small" style="margin:0 0 8px">Click a theme name to see what was checked, what failed and the pictures, without waiting for the other themes.</p><table><thead><tr><th>#</th><th>Theme</th><th>Status</th><th>What it is doing</th><th>Failed</th><th>Passed</th><th>Time</th></tr></thead><tbody>' +
       Q.themes.map(function (t, i) {
@@ -499,7 +502,7 @@ a.brand{color:inherit;text-decoration:none}
           }).join('') + '</tbody></table>' : '<p class="muted small" style="margin:0">' + (f ? '' : 'Nothing failed in this pass.') + '</p>') + '</div>';
       });
     }
-    if (DET.run) h += '<div class="card"><h3>Full report</h3>' + reportLink(DET.run, 'report.html of ' + esc(DET.run)) + '</div>';
+    if (DET.run) h += '<div class="card"><h3>Report of this theme</h3>' + reportLink(DET.run, 'Open the report of ' + esc(name), null, themeReportFile(name)) + ' <span class="muted small">(only this theme, with its pictures)</span></div>';
     if (h !== DET.last) {
       var a = document.activeElement, fk = a && a.getAttribute ? [a.getAttribute('data-vk'), a.getAttribute('data-v')] : null;
       var body = $('detail-body'), top = body.scrollTop;

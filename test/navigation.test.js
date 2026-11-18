@@ -147,3 +147,46 @@ test('full report: links to every page of the tool and a way back; the dashboard
     await page.close();
   } finally { await browser.close(); server.close(); }
 });
+
+test('reports: one page per theme next to the full one; the drawer links to the theme only, the Live page to the full report with its date', async () => {
+  const { renderAll, themeReportFile } = require('../src/report/html');
+  const { writeReports } = require('../src/report/write');
+  const mk = (name, st) => ({ name, passes: [{ layout: 'vertical', viewport: 'desktop', results: [{ id: 'V-10', layout: 'vertical', status: st, detail: name + ' detail', shots: [] }] }] });
+  const run = { runId: '2026-11-18-staging', env: 'staging', shop: 's', startedAt: '2026-11-18T07:30:00.000Z', themes: [mk('Dawn', 'fail'), mk('Craft Plus', 'pass')] };
+  const pages = renderAll(run, checklist, null);
+  assert.deepStrictEqual(pages.map((p) => p.file), ['report.html', 'report-dawn.html', 'report-craft-plus.html']);
+  assert.strictEqual(themeReportFile('Craft Plus'), 'report-craft-plus.html');
+  const full = pages[0].html, dawn = pages[1].html;
+  assert.ok(full.includes('Dawn detail') && full.includes('Craft Plus detail'), 'the full report has every theme');
+  assert.ok(dawn.includes('Dawn detail') && !dawn.includes('Craft Plus detail'), 'the theme report has that theme only');
+  assert.match(dawn, /<h1>Dawn: theme report<\/h1>/);
+  assert.match(dawn, /<a href="report.html">Full report \(all themes\)<\/a>/);
+  assert.match(dawn, /<a class="back" href="..\/..\/#runs">/);
+  assert.ok(!full.includes('Full report (all themes)'));
+  // files on disk, and a theme that left the run loses its page
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-rep-'));
+  writeReports(dir, run, checklist, null);
+  assert.deepStrictEqual(fs.readdirSync(dir).sort(), ['report-craft-plus.html', 'report-dawn.html', 'report.html']);
+  writeReports(dir, Object.assign({}, run, { themes: [run.themes[0]] }), checklist, null);
+  assert.deepStrictEqual(fs.readdirSync(dir).sort(), ['report-dawn.html', 'report.html']);
+
+  // in the page
+  const srv = stub();
+  await listenOn(srv);
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+    await page.goto(`http://127.0.0.1:${srv.address().port}/#live`);
+    await page.waitForSelector('button[data-theme="Dawn"]');
+    const live = await page.locator('main a[href$="/report.html"]').first();
+    assert.match(await live.textContent(), /Open the full theme report · \d{4}-\d{2}-\d{2}/);
+    assert.match(await live.getAttribute('href'), /^runs\/r1\/report\.html$/);
+    assert.match(await page.textContent('main'), /Full theme report/);
+    await page.click('button[data-theme="Dawn"]');
+    await page.waitForSelector('#detail.on');
+    assert.strictEqual(await page.locator('#detail-body a[href$="/report.html"]').count(), 0, 'no all-themes report inside the drawer');
+    assert.strictEqual(await page.getAttribute('#detail-body a[href$="report-dawn.html"]', 'href'), 'runs/r1/report-dawn.html');
+    assert.match(await page.textContent('#detail-body'), /Report of this theme/);
+    await page.close();
+  } finally { await browser.close(); srv.close(); }
+});

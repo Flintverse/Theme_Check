@@ -67,6 +67,8 @@ async function checkOnce(root, cfg, opts) {
   return { changed: true, steps };
 }
 
+const REPORT_SEEN = new Map(); // run id -> what was already uploaded (only changed pages go up)
+
 // Manual verdicts (skip / pass / review / fail) set on the web page are kept in R2; the ones set in the local dashboard are
 // on this machine. For the newest runs, the higher rev wins: a newer web copy is written here and the reports, the numbers
 // and the issue tracker are recalculated; a newer local copy is sent up. Returns how many runs changed.
@@ -91,8 +93,9 @@ async function syncOverrides(root, cfg, opts) {
     if (rr === local.rev) continue;
     if (rr > local.rev) ovr.writeOverrides(runDir, { rev: rr, items: remote.items || {} });
     o.refresh({ root, cfg, runId, checklist: cfgLib.loadChecklist(root) });
-    const files = ['overrides.json', 'report.html', 'summary.json'].map((f) => path.join(runDir, f)).filter((f) => fs.existsSync(f));
-    await sync.pushRunFiles(monitor, runDir, runId, { files, fetchImpl: o.fetchImpl });
+    const files = ['overrides.json', 'summary.json'].concat(fs.readdirSync(runDir).filter((n) => /^report.*.html$/.test(n))).map((f) => path.join(runDir, f)).filter((f) => fs.existsSync(f));
+    if (!REPORT_SEEN.has(runId)) REPORT_SEEN.set(runId, new Map());
+    await sync.pushRunFiles(monitor, runDir, runId, { files, seen: REPORT_SEEN.get(runId), fetchImpl: o.fetchImpl });
     await (o.pushState ? o.pushState() : sync.pushState(monitor, require('./publish').buildState(root, cfg, { remote: true }), o.fetchImpl));
     changed++;
   }
@@ -115,9 +118,10 @@ async function upgradeReports(root, cfg, opts) {
   for (const runId of ids) {
     if (runId === going) continue;
     const rep = path.join(dir, runId, 'report.html');
-    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('class="tcnav"')) continue;
+    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('tc-report-v3')) continue;
     o.refresh({ root, cfg, runId, checklist: cfgLib.loadChecklist(root) });
-    await sync.pushRunFiles(monitor, path.join(dir, runId), runId, { files: [rep], fetchImpl: o.fetchImpl });
+    const pages = fs.readdirSync(path.join(dir, runId)).filter((n) => /^report.*.html$/.test(n)).map((n) => path.join(dir, runId, n));
+    await sync.pushRunFiles(monitor, path.join(dir, runId), runId, { files: pages, fetchImpl: o.fetchImpl });
     upgraded++;
   }
   return { upgraded };

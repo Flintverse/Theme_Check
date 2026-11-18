@@ -22,7 +22,7 @@ function liveRunPusher(s, root, cfg, minMs) {
       last = Date.now();
       if (!all) return null;
       // report.html is drawn here with the current code (a run started by an older version writes the old layout)
-      const files = all.filter((f) => path.basename(f) !== 'report.html');
+      const files = all.filter((f) => !/^report.*.html$/.test(path.basename(f)));
       const r = await sync.pushRunFiles(s, runDir, p.runId, { files, seen });
       await pushFreshReport(s, root, cfg, p.runId, seen);
       return r;
@@ -38,12 +38,16 @@ async function pushFreshReport(s, root, cfg, runId, seen, fetchImpl) {
   const run = JSON.parse(fs.readFileSync(path.join(runDir, 'results.json'), 'utf8'));
   const ovr = require('./store/overrides');
   const checklist = require('./config').loadChecklist(root);
-  const html = require('./report/html').render(ovr.applyOverrides(run, ovr.readOverrides(runDir)), checklist, require('./report/compare').findPrevious(dir, run.env, runId));
-  const sig = require('crypto').createHash('md5').update(html).digest('hex');
-  if (seen.get('report.html#fresh') === sig) return false;
-  await sync.send(s, 'PUT', `media/${runId}/report.html`, Buffer.from(html), 'application/octet-stream', fetchImpl);
-  seen.set('report.html#fresh', sig);
-  return true;
+  const pages = require('./report/html').renderAll(ovr.applyOverrides(run, ovr.readOverrides(runDir)), checklist, require('./report/compare').findPrevious(dir, run.env, runId));
+  let sent = 0;
+  for (const pg of pages) { // report.html and one report-<theme>.html per theme; only the ones that changed go up
+    const sig = require('crypto').createHash('md5').update(pg.html).digest('hex');
+    if (seen.get('fresh#' + pg.file) === sig) continue;
+    await sync.send(s, 'PUT', `media/${runId}/${pg.file}`, Buffer.from(pg.html), 'application/octet-stream', fetchImpl);
+    seen.set('fresh#' + pg.file, sig);
+    sent++;
+  }
+  return sent > 0;
 }
 
 function forRun(root, cfg) {

@@ -64,14 +64,17 @@ figcaption{font:12px ui-monospace,monospace;color:var(--muted)}
 .lb .bg{position:absolute;inset:0}
 `;
 // Links to every page of the tool (this page may not run scripts, so these are plain links; the dashboard is two folders up).
-const NAV = (run) => `<nav class="tcnav" aria-label="The tool"><a class="back" href="../../#runs">&larr; Back to the dashboard</a><a href="../../#live">Live</a><a href="../../#overview">Overview</a><a href="../../#issues">Issue tracker</a><a href="../../#runs">Runs</a><a href="../../#themes">Themes</a><a href="../../#schedule">Schedule</a><span class="here">Report ${esc(run.runId)}</span></nav>`;
+const NAV = (run, only) => `<nav class="tcnav" aria-label="The tool"><a class="back" href="../../#runs">&larr; Back to the dashboard</a>${only ? '<a href="report.html">Full report (all themes)</a>' : ''}<a href="../../#live">Live</a><a href="../../#overview">Overview</a><a href="../../#issues">Issue tracker</a><a href="../../#runs">Runs</a><a href="../../#themes">Themes</a><a href="../../#schedule">Schedule</a><span class="here">${only ? esc(only) + ' &middot; ' : ''}Report ${esc(run.runId)}</span></nav>`;
 let lbCount = 0; // each picture gets its own pop-up (a pure CSS one: this page may not run scripts)
 
 const pill = (s) => `<span class="pill p-${esc(s)}">${esc(String(s).toUpperCase())}</span>`;
 const chg = (c) => (c ? `<span class="chg ${esc(c)}">${esc(c)}</span>` : '');
 
-function render(run, checklist, prevRun) {
+// opts.only = a theme name: the report of that theme alone (same page, one row per check, same pictures)
+function render(run, checklist, prevRun, opts) {
   lbCount = 0; // the same input always gives the same page
+  const only = opts && opts.only;
+  if (only) run = Object.assign({}, run, { themes: (run.themes || []).filter((t) => t.name === only) });
   const flat = flatten(run);
   const { rows, fixed } = compare(flat, prevRun ? flatten(prevRun) : null);
   const t = totals(rows);
@@ -124,8 +127,8 @@ function render(run, checklist, prevRun) {
 
   const fixedHtml = fixed.length ? `<div class="note"><b>Fixed since the previous run (${fixed.length})</b><ul>${fixed.map((r) => `<li>${esc(r.theme)} / ${esc(r.layout)} / ${esc(r.id)}${chg('FIXED')}</li>`).join('')}</ul></div>` : '';
 
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body>${NAV(run)}<div class="wrap">
-<div><div class="eyebrow">Theme check | Findter</div><h1>Theme compatibility run ${esc(run.runId)}</h1></div>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${only ? esc(only) + ' - ' : ''}Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body><!-- tc-report-v3 -->${NAV(run, only)}<div class="wrap">
+<div><div class="eyebrow">Theme check | Findter</div><h1>${only ? esc(only) + ': theme report' : 'Theme compatibility run ' + esc(run.runId)}</h1></div>
 <dl class="facts"><div><dt>Environment</dt><dd>${esc(run.env)} (${esc(run.shop || '')})</dd></div><div><dt>Run</dt><dd>${esc(require('../lib/time').fmtStamp(run.startedAt))}</dd></div><div><dt>Themes</dt><dd>${themes.length}</dd></div><div><dt>Checklist</dt><dd>${checklist.items.length} items, v${esc(checklist.version)}</dd></div><div><dt>Compared with</dt><dd>${prevRun ? esc(prevRun.runId) : 'no earlier run'}</dd></div></dl>
 <div class="totals"><div class="t t-pass"><b>${t.pass}</b>PASS</div><div class="t t-fail"><b>${t.fail + (t.error || 0)}</b>FAIL</div><div class="t t-review"><b>${t.review}</b>REVIEW</div><div class="t t-na"><b>${t.na}</b>N/A</div></div>
 <h2 class="sec">Found</h2>${sharedHtml}${fixedHtml}
@@ -134,4 +137,12 @@ function render(run, checklist, prevRun) {
 </div></body></html>`;
 }
 
-module.exports = { render };
+// File name of one theme's report inside the run folder (same slug as the picture folders).
+const themeReportFile = (name) => 'report-' + String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.html';
+
+// Every page of a run: report.html (all themes) and one report-<theme>.html per theme, as [{ file, html }].
+function renderAll(run, checklist, prevRun) {
+  return [{ file: 'report.html', html: render(run, checklist, prevRun) }].concat((run.themes || []).map((t) => ({ file: themeReportFile(t.name), html: render(run, checklist, prevRun, { only: t.name }) })));
+}
+
+module.exports = { render, renderAll, themeReportFile };

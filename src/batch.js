@@ -33,7 +33,7 @@ function saveRun(runDir, run, checklist, prev) {
   const put = (name, text) => { const f = path.join(runDir, name); fs.writeFileSync(f + '.tmp', text); fs.renameSync(f + '.tmp', f); };
   put('results.json', JSON.stringify(run, null, 2));
   const ovr = require('./store/overrides'); // the report shows the manual verdicts; results.json stays the script's own
-  put('report.html', render(ovr.applyOverrides(run, ovr.readOverrides(runDir)), checklist, prev));
+  require('./report/write').writeReports(runDir, ovr.applyOverrides(run, ovr.readOverrides(runDir)), checklist, prev);
 }
 
 // Which themes are pivots, which go in which batch. Pure, so it can be tested.

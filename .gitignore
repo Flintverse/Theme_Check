@@ -1,7 +1,7 @@
 node_modules/
 # saved Shopify admin sessions, run output and local config never go to git
 .profile*/
-runs/
+/runs/
 config/config.local.json
 .env
 *.log

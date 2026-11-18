@@ -69,6 +69,10 @@ svg.chart{width:100%;height:150px}
 @media (prefers-reduced-motion:reduce){.pulse{animation:none}}
 .pbar{height:14px;background:var(--na-bg);border-radius:8px;overflow:hidden}.pbar i{display:block;height:100%;background:var(--accent);transition:width .6s}
 .st-queued{background:var(--na-bg);color:var(--na)}.st-installing,.st-installed,.st-setup{background:var(--warn-bg);color:var(--warn)}.st-testing{background:var(--accent);color:var(--accent-ink)}.st-done{background:var(--pass-bg);color:var(--pass)}.st-failed{background:var(--fail-bg);color:var(--fail)}
+.linkbtn{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline}
+#detail{position:fixed;inset:0;display:none;z-index:15;background:rgba(0,0,0,.45)}#detail.on{display:flex;justify-content:flex-end}
+#detail .panel{background:var(--bg);width:min(900px,100%);height:100%;overflow:auto;padding:16px;display:grid;gap:14px;align-content:start;box-shadow:-8px 0 24px rgba(0,0,0,.25)}
+.chk{width:100%;border-collapse:collapse}.chk td,.chk th{vertical-align:top;padding:6px 8px;border-top:1px solid var(--line);text-align:left}.chk .ev{max-width:200px;min-width:120px}
 .log{max-height:300px;overflow:auto;font:12px/1.5 ui-monospace,monospace}.log div{padding:2px 0;border-bottom:1px solid var(--line)}
 @media (max-width:640px){.bar-row{grid-template-columns:90px 1fr 30px}}
 </style>
@@ -78,6 +82,7 @@ svg.chart{width:100%;height:150px}
   <span class="brand">Theme check</span><span id="mode" class="badge">...</span><span id="who" class="muted small"></span>
   <nav id="nav"></nav>
 </div></header>
+<div id="detail" role="dialog" aria-modal="true" aria-label="Results of one theme"><div class="panel" id="detail-body"></div></div>
 <div id="lightbox" role="dialog" aria-label="Picture"></div>
 <main id="main"><div class="card">Loading...</div></main>
 
@@ -299,12 +304,12 @@ svg.chart{width:100%;height:150px}
       '<div class="card"><div class="row" style="justify-content:space-between"><b>' + c.done + ' of ' + c.total + ' themes done</b><span class="muted small">' + pct + '%' + (P.etaMinutes != null ? ' &middot; about ' + P.etaMinutes + ' min left (estimate)' : '') + ' &middot; elapsed ' + fmt(end - new Date(P.startedAt).getTime()) + '</span></div><div class="pbar" style="margin-top:8px" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
       '<p style="margin:12px 0 0"><b>Now:</b> ' + (P.running ? (cur ? esc(cur.theme) + ' &ndash; ' + esc(cur.step || cur.status) + ' <span class="muted small">(this step ' + ago(cur.since) + ')</span>' : esc(P.step || P.phase)) : esc(P.phase)) + '</p></div>' +
       '<div class="kpis">' + kpi('Passed so far', P.totals.pass, '', 'good') + kpi('Failed so far', P.totals.fail, '', P.totals.fail ? 'bad' : 'good') + kpi('To review', P.totals.review) + kpi('Not testable', P.totals.na) + kpi('Could not set up', c.failedSetup, '', c.failedSetup ? 'bad' : '') + '</div>' +
-      '<div class="card scroll"><h3>Themes</h3><table><thead><tr><th>#</th><th>Theme</th><th>Status</th><th>What it is doing</th><th>Failed</th><th>Passed</th><th>Time</th></tr></thead><tbody>' +
+      '<div class="card scroll"><h3>Themes</h3><p class="muted small" style="margin:0 0 8px">Click a theme name to see what was checked, what failed and the pictures, without waiting for the other themes.</p><table><thead><tr><th>#</th><th>Theme</th><th>Status</th><th>What it is doing</th><th>Failed</th><th>Passed</th><th>Time</th></tr></thead><tbody>' +
       P.themes.map(function (t, i) {
         // only the time the theme is really being set up or tested (waiting for its turn does not count)
         var act = t.activeMs === undefined ? null : (t.activeMs || 0) + (t.activeSince ? Date.now() - new Date(t.activeSince).getTime() : 0);
         var tm = act !== null ? (act > 0 ? fmt(act) : '-') : (t.startedAt ? fmt((t.finishedAt ? new Date(t.finishedAt) : Date.now()) - new Date(t.startedAt)) : '-');
-        return '<tr><td>' + (i + 1) + '</td><td>' + esc(t.name) + '<div class="small muted">batch ' + esc(t.batch) + '</div></td><td><span class="pill st-' + esc(t.status) + '">' + esc(t.status.toUpperCase()) + '</span></td><td class="small">' + esc(t.step || '') + '</td><td>' + (t.fail ? '<b style="color:var(--fail)">' + t.fail + '</b>' : '0') + '</td><td>' + t.pass + '</td><td>' + tm + '</td></tr>';
+        return '<tr><td>' + (i + 1) + '</td><td><button class="linkbtn" data-theme="' + esc(t.name) + '" title="Open the results of this theme">' + esc(t.name) + '</button><div class="small muted">batch ' + esc(t.batch) + '</div></td><td><span class="pill st-' + esc(t.status) + '">' + esc(t.status.toUpperCase()) + '</span></td><td class="small">' + esc(t.step || '') + '</td><td>' + (t.fail ? '<b style="color:var(--fail)">' + t.fail + '</b>' : '0') + '</td><td>' + t.pass + '</td><td>' + tm + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
       '<div class="card"><h3>Recent events (UTC+7)</h3><div class="log">' + (P.events.slice(-25).reverse().map(function (e) { return '<div><span class="muted">' + esc(tsLocal(e.t).slice(11, 19)) + '</span> ' + esc(e.msg) + '</div>'; }).join('') || '<div class="muted">Nothing yet.</div>') + '</div></div>';
   }
@@ -318,6 +323,62 @@ svg.chart{width:100%;height:150px}
     } else if (p.etaMinutes === undefined) p.etaMinutes = null;
     return p;
   }
+  /* ---- One theme's results, opened from the Live table (refreshes while the run goes on) ---- */
+  var DET = { name: null };
+  var CHK_CLASS = { pass: 'st-done', fail: 'st-failed', error: 'st-failed', review: 'st-installing', na: 'st-queued' };
+  function openTheme(name) {
+    clearTimeout(DET.t);
+    DET = { name: name, run: P && P.runId, data: null, err: null, t: null, showAll: false, last: null };
+    $('detail').classList.add('on');
+    drawDetail(); fetchDetail();
+  }
+  function closeTheme() { clearTimeout(DET.t); DET = { name: null }; $('detail').classList.remove('on'); }
+  function fetchDetail() {
+    clearTimeout(DET.t);
+    var name = DET.name; if (!name) return;
+    if (S && S.mediaLocal === false) { DET.err = 'The results are only on the test machine (history/runs/' + DET.run + ').'; drawDetail(); return; }
+    fetch(mediaUrl(DET.run, 'results.json'), { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { if (r.status === 404) return null; if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) { if (DET.name !== name) return; DET.data = j; DET.err = null; drawDetail(); })
+      .catch(function (e) { if (DET.name !== name) return; DET.err = e.message; drawDetail(); })
+      .then(function () { if (DET.name === name && P && P.running) DET.t = setTimeout(fetchDetail, 10000); });
+  }
+  function drawDetail() {
+    if (!DET.name) return;
+    var name = DET.name;
+    var t = (P && P.themes || []).filter(function (x) { return x.name === name; })[0];
+    var r = DET.data && DET.data.themes ? DET.data.themes.filter(function (x) { return x.name === name; })[0] : null;
+    var info = {}; (S && S.checklist || []).forEach(function (c) { info[c.id] = c; });
+    var h = '<div class="row" style="justify-content:space-between"><h2>' + esc(name) + (t ? ' <span class="pill st-' + esc(t.status) + '">' + esc(t.status.toUpperCase()) + '</span>' : '') + '</h2><button id="d-close">Close</button></div>';
+    if (t) h += '<p class="muted small" style="margin:0">' + esc(t.step || '') + (P.running && t.activeSince ? ' (testing now)' : '') + '</p>';
+    if (DET.err) h += '<div class="note">' + esc(DET.err) + '</div>';
+    if (!r) {
+      h += '<div class="card"><b>No results for this theme yet.</b><p class="muted small" style="margin:6px 0 0">' + (t && /^(queued|installing|installed)$/.test(t.status) ? 'It has not been tested yet. Its results appear here as soon as its first check is done.' : 'Results appear here as soon as its first check is done, and this panel refreshes by itself.') + '</p></div>';
+    } else if (r.setupFailed) {
+      h += '<div class="note">This theme could not be set up and was not tested: ' + esc(r.setupFailed.reason || '') + (r.setupFailed.detail ? ' (' + esc(r.setupFailed.detail) + ')' : '') + '</div>';
+    } else {
+      var tot = { pass: 0, fail: 0, review: 0, na: 0 };
+      (r.passes || []).forEach(function (p) { (p.results || []).forEach(function (x) { var k = x.status === 'error' ? 'fail' : x.status; if (tot[k] !== undefined) tot[k]++; }); });
+      h += '<div class="kpis">' + kpi('Failed', tot.fail, '', tot.fail ? 'bad' : 'good') + kpi('Passed', tot.pass, '', 'good') + kpi('To review', tot.review) + kpi('Not testable', tot.na) + '</div>';
+      h += '<div class="row"><label class="small"><input type="checkbox" id="d-all"' + (DET.showAll ? ' checked' : '') + '> Also show the passed and not testable checks</label></div>';
+      (r.passes || []).forEach(function (p) {
+        var rows = (p.results || []).filter(function (x) { return DET.showAll || /^(fail|error|review)$/.test(x.status); });
+        var order = { fail: 0, error: 0, review: 1, pass: 2, na: 3 };
+        rows.sort(function (a, b) { return (order[a.status] - order[b.status]) || String(a.id).localeCompare(String(b.id)); });
+        var f = (p.results || []).filter(function (x) { return x.status === 'fail' || x.status === 'error'; }).length;
+        h += '<div class="card scroll"><h3>' + esc(p.layout) + ' &middot; ' + esc(p.viewport) + ' <span class="muted">(' + (p.results || []).length + ' checks, ' + f + ' failed)</span></h3>' +
+          (p.blocked ? '<div class="note">This pass was blocked: ' + esc(typeof p.blocked === 'string' ? p.blocked : 'the page could not be checked') + '</div>' : '') +
+          (rows.length ? '<table class="chk"><thead><tr><th>Check</th><th>Result</th><th>What was found</th><th>Picture</th></tr></thead><tbody>' + rows.map(function (x) {
+            var c = info[x.id] || {};
+            return '<tr><td><b>' + esc(x.id) + '</b><div class="small muted">' + esc(c.title || '') + '</div></td><td><span class="pill ' + (CHK_CLASS[x.status] || 'st-queued') + '">' + esc(String(x.status).toUpperCase()) + '</span></td><td class="small">' + esc(x.detail || '') + '</td><td>' +
+              ((x.shots && x.shots.length) ? '<div class="ev">' + x.shots.map(function (sh) { return '<img loading="lazy" data-zoom="1" src="' + esc(mediaUrl(DET.run, sh)) + '" alt="' + esc(String(sh).split('/').pop()) + '">'; }).join('') + '</div>' : '<span class="muted small">-</span>') + '</td></tr>';
+          }).join('') + '</tbody></table>' : '<p class="muted small" style="margin:0">' + (f ? '' : 'Nothing failed in this pass.') + '</p>') + '</div>';
+      });
+    }
+    if (DET.run) h += '<div class="card"><h3>Full report</h3>' + reportLink(DET.run, 'report.html of ' + esc(DET.run)) + '</div>';
+    if (h !== DET.last) { DET.last = h; $('detail-body').innerHTML = h; }
+  }
+
   var progT = null;
   function loadProgress() {
     clearTimeout(progT);
@@ -327,6 +388,7 @@ svg.chart{width:100%;height:150px}
         if (!S) return;
         if (TAB === 'live') { $('view').innerHTML = vLive(); nav(); }
         else { var b = $('banner'); if (b) b.innerHTML = bannerHtml(); nav(); }
+        if (DET.name) drawDetail();
         if (was && !p.running) load();
       })
       .then(function () { progT = setTimeout(loadProgress, (P && P.running) ? 3000 : 12000); });
@@ -477,10 +539,14 @@ svg.chart{width:100%;height:150px}
 
   document.addEventListener('click', function (e) {
     var lb = $('lightbox');
+    var tb = e.target && e.target.closest ? e.target.closest('[data-theme]') : null;
+    if (tb) { openTheme(tb.getAttribute('data-theme')); return; }
+    if (e.target && (e.target.id === 'd-close' || e.target.id === 'detail')) { closeTheme(); return; }
+    if (e.target && e.target.id === 'd-all') { DET.showAll = e.target.checked; drawDetail(); return; }
     if (e.target && e.target.getAttribute && e.target.getAttribute('data-zoom')) { lb.innerHTML = '<img src="' + esc(e.target.src) + '" alt="">'; lb.style.display = 'flex'; }
     else if (lb.style.display === 'flex') { lb.style.display = 'none'; lb.innerHTML = ''; }
   });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { $('lightbox').style.display = 'none'; } });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { if ($('lightbox').style.display === 'flex') $('lightbox').style.display = 'none'; else if (DET.name) closeTheme(); } });
   window.addEventListener('hashchange', function () { var h = location.hash.slice(1); if (TABS.some(function (t) { return t[0] === h; })) { TAB = h; render(); } });
   var h0 = location.hash.slice(1); if (TABS.some(function (t) { return t[0] === h0; })) TAB = h0;
   load().then(function () { return loadProgress(); }).then(function () { if (P && P.running && !location.hash) { TAB = 'live'; render(); } });

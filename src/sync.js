@@ -61,17 +61,22 @@ function walk(dir, out) {
 
 // Upload one run's report, summary, results and pictures (never videos) with a small pool.
 async function pushRunFiles(sync, runDir, runId, opts) {
-  const o = Object.assign({ concurrency: 4, fetchImpl: null }, opts);
-  const files = walk(runDir, []).filter((f) => /\.(png|html|json)$/i.test(f) && !/_debug|_video/.test(f));
+  // opts.files: only these files; opts.seen: a Map remembering what was already uploaded, so only new or changed files go up
+  const o = Object.assign({ concurrency: 4, fetchImpl: null, files: null, seen: null }, opts);
+  const files = o.files || walk(runDir, []).filter((f) => /\.(png|html|json)$/i.test(f) && !/_debug|_video/.test(f));
   let i = 0, ok = 0; const failed = [];
   async function worker() {
     while (i < files.length) {
       const f = files[i++];
       const rel = path.relative(runDir, f).split(path.sep).join('/');
       try {
+        const st = fs.statSync(f);
+        const sig = st.mtimeMs + ':' + st.size;
+        if (o.seen && o.seen.get(rel) === sig) continue;
         const buf = fs.readFileSync(f);
         if (buf.length > 15e6) { failed.push(`${rel}: over 15 MB, skipped`); continue; }
         await send(sync, 'PUT', `media/${runId}/${rel}`, buf, 'application/octet-stream', o.fetchImpl);
+        if (o.seen) o.seen.set(rel, sig);
         ok++;
       } catch (e) { failed.push(`${rel}: ${e.message}`); }
     }
@@ -80,8 +85,20 @@ async function pushRunFiles(sync, runDir, runId, opts) {
   return { uploaded: ok, failed };
 }
 
+// The files of a run that is still going: results.json, report.html and only the pictures of failing / review checks
+// (the same ones that are kept when the run ends). null when results.json is missing or half written.
+function liveRunFiles(runDir) {
+  let run;
+  try { run = JSON.parse(fs.readFileSync(path.join(runDir, 'results.json'), 'utf8')); } catch (e) { return null; }
+  const files = [path.join(runDir, 'results.json'), path.join(runDir, 'report.html')];
+  (run.themes || []).forEach((t) => (t.passes || []).forEach((p) => (p.results || []).forEach((r) => {
+    if (/^(fail|error|review)$/.test(r.status)) (r.shots || []).forEach((s) => files.push(path.join(runDir, s)));
+  })));
+  return files.filter((f) => fs.existsSync(f));
+}
+
 async function pushState(sync, state, fetchImpl) {
   await send(sync, 'POST', 'state', JSON.stringify(state), null, fetchImpl);
 }
 
-module.exports = { syncConfig, send, createProgressPusher, pushRunFiles, pushState };
+module.exports = { syncConfig, send, createProgressPusher, pushRunFiles, liveRunFiles, pushState };

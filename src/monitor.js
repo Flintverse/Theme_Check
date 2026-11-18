@@ -8,14 +8,33 @@ const { withEta } = require('./store/progress');
 
 const remoteState = (root, cfg) => buildState(root, cfg, { remote: true });
 
+// While a run goes on, keeps the results of the themes already tested (and their pictures) on Cloudflare, so the Live
+// page can open a theme without waiting for the whole run. Only changed files go up; at most once per `minMs`.
+function liveRunPusher(s, root, cfg, minMs) {
+  const seen = new Map();
+  let last = 0, busy = false;
+  return async function push(p, force) {
+    if (!p || !p.runId || busy || (!force && Date.now() - last < (minMs || 45000))) return null;
+    busy = true;
+    try {
+      const runDir = path.join(runsDir(root, cfg), p.runId);
+      const files = sync.liveRunFiles(runDir);
+      last = Date.now();
+      if (!files) return null;
+      return await sync.pushRunFiles(s, runDir, p.runId, { files, seen });
+    } catch (e) { return null; } finally { busy = false; }
+  };
+}
+
 function forRun(root, cfg) {
   const s = sync.syncConfig(cfg);
   if (!s) return { onProgress: null, onFinish: null };
   if (s.error) { console.log(`Monitor: ${s.error}`); return { onProgress: null, onFinish: null }; }
   console.log(`Monitor: pushing live progress to ${s.base} (about every ${Math.round(s.everyMs / 1000)} s)`);
   const pusher = sync.createProgressPusher(s);
+  const livePush = liveRunPusher(s, root, cfg);
   return {
-    onProgress: (s) => pusher(withEta(Object.assign({}, s))), // counts and the estimate travel with the progress
+    onProgress: (p) => { pusher(withEta(Object.assign({}, p))); livePush(p); }, // counts and the estimate travel with the progress
     onFinish: async ({ run, runDir }) => {
       await pusher.done();
       await sync.pushState(s, remoteState(root, cfg));
@@ -45,6 +64,7 @@ async function watch(root, cfg, opts) {
   const s = sync.syncConfig(cfg);
   if (!s || s.error) { console.log((s && s.error) || 'No "cloudflare" section in config/config.local.json.'); return; }
   const pusher = sync.createProgressPusher(s);
+  const livePush = liveRunPusher(s, root, cfg);
   let wasRunning = null;
   await sync.pushState(s, remoteState(root, cfg)).catch((e) => console.log('state push failed: ' + e.message));
   console.log('Watching the run progress and pushing it to ' + s.base + ' (Ctrl+C to stop)');
@@ -53,7 +73,8 @@ async function watch(root, cfg, opts) {
     const p = readProgress(dataDir(root, cfg));
     if (!p) return;
     pusher(p);
-    if (wasRunning && !p.running) { await pusher.done(); await sync.pushState(s, remoteState(root, cfg)).catch((e) => console.log('state push failed: ' + e.message)); console.log('Run ended: dashboard data pushed.'); }
+    if (p.running) await livePush(p);
+    if (wasRunning && !p.running) { await livePush(p, true); await pusher.done(); await sync.pushState(s, remoteState(root, cfg)).catch((e) => console.log('state push failed: ' + e.message)); console.log('Run ended: dashboard data pushed.'); }
     wasRunning = p.running;
   };
   await tick();

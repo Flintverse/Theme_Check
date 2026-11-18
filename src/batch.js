@@ -29,8 +29,10 @@ const DELAYS = { afterInstall: 12000, afterClean: 10000, beforeEdit: 6000, after
 
 function saveRun(runDir, run, checklist, prev) {
   fs.mkdirSync(runDir, { recursive: true });
-  fs.writeFileSync(path.join(runDir, 'results.json'), JSON.stringify(run, null, 2));
-  fs.writeFileSync(path.join(runDir, 'report.html'), render(run, checklist, prev));
+  // write to a temporary name first, so a reader (the dashboard sync) never sees half a file
+  const put = (name, text) => { const f = path.join(runDir, name); fs.writeFileSync(f + '.tmp', text); fs.renameSync(f + '.tmp', f); };
+  put('results.json', JSON.stringify(run, null, 2));
+  put('report.html', render(run, checklist, prev));
 }
 
 // Which themes are pivots, which go in which batch. Pure, so it can be tested.
@@ -46,7 +48,7 @@ function planRun(themeList, env, size) {
   return { pivots, rest, batches };
 }
 
-async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, runDir, designPage, log, prog, delays }) {
+async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, runDir, designPage, log, prog, delays, partial }) {
   const key = keyOf(theme.name);
   const out = { name: theme.name, id: themeId, passes: [], setup: {} };
   const outDir = runDir;
@@ -55,6 +57,7 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
   const add = (pass) => {
     out.passes.push(pass);
     prog.addResults(theme.name, pass.results);
+    if (partial) { try { partial(out); } catch (e) { /* saving a partial result must never stop the test */ } } // the page can show this theme's results right now
   };
   const blocked = (passes) => passes.find((p) => p.blocked);
   try {
@@ -149,7 +152,9 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
 
   const record = async (t, id, asEnv) => {
     log(` Testing ${t.name}`);
-    run.themes.push(await testTheme({ ctx, browser, env: asEnv || env, cfg, checklist, theme: t, themeId: id, runDir, designPage, log, prog, delays }));
+    const keep = (o) => { const i = run.themes.findIndex((x) => x.name === o.name); if (i < 0) run.themes.push(o); else run.themes[i] = o; };
+    const partial = (o) => { keep(o); saveRun(runDir, run, checklist, prev); };
+    keep(await testTheme({ ctx, browser, env: asEnv || env, cfg, checklist, theme: t, themeId: id, runDir, designPage, log, prog, delays, partial }));
     saveRun(runDir, run, checklist, prev); // after every theme, so a crash keeps what was done
   };
   // install one theme from the Theme Store; returns its id or null (and records the failure)

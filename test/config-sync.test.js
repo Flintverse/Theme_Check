@@ -299,3 +299,83 @@ test('theme time counts only the time it is set up or tested, not waiting for it
   assert.strictEqual(p.theme('A').activeSince, null);
   assert.strictEqual(p.theme('B').activeMs, 0, 'a queued theme has no time');
 });
+
+test('the live page: click a theme to see its results, failures first, with pictures, while the run goes on', async () => {
+  const http = require('http');
+  const ui = fs.readFileSync(path.join(SRC, 'ui', 'index.html'));
+  const base = { readOnly: true, mediaLocal: true, envs: ['staging'], themes: [], schedule: { description: 'x' }, runs: [], issues: { items: {} }, themeStatus: [], checklist: [{ id: 'V-10', title: 'Filter title is aligned', severity: 'minor' }, { id: 'G-01', title: 'Filter shows', severity: 'major' }], library: {} };
+  const prog = { running: true, runId: 'r1', env: 'staging', startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), phase: 'testing', mode: 'background', totals: { pass: 1, fail: 1, na: 0, review: 0 }, current: { theme: 'Dawn', status: 'testing', step: 'checking', since: new Date().toISOString() },
+    themes: [{ name: 'Dawn', batch: 1, status: 'testing', step: 'Checking horizontal', fail: 1, pass: 1, activeMs: 1000, activeSince: new Date().toISOString() }, { name: 'Craft', batch: 1, status: 'installed', step: 'Installed, waiting', fail: 0, pass: 0 }], events: [] };
+  const results = { runId: 'r1', themes: [{ name: 'Dawn', passes: [{ layout: 'vertical', viewport: 'desktop', results: [
+    { id: 'G-01', layout: 'vertical', status: 'pass', detail: 'ok', shots: [] },
+    { id: 'V-10', layout: 'vertical', status: 'fail', detail: 'title is 12px off', shots: ['dawn/vertical-desktop/V-10.png'] }] }] }] };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const srv = http.createServer((req, res) => {
+    const send = (o) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (req.url === '/api/state') return send(base);
+    if (req.url === '/api/progress') return send(prog);
+    if (req.url === '/api/me') { res.writeHead(401); return res.end('{}'); }
+    if (req.url === '/runs/r1/results.json') return send(results);
+    if (req.url.startsWith('/runs/r1/dawn')) { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(png); }
+    res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(ui);
+  });
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`http://127.0.0.1:${srv.address().port}/#live`);
+    await page.waitForSelector('button[data-theme="Dawn"]');
+    await page.click('button[data-theme="Dawn"]');
+    await page.waitForSelector('#detail.on .chk');
+    const txt = await page.textContent('#detail-body');
+    assert.match(txt, /Dawn/);
+    assert.match(txt, /V-10/);
+    assert.match(txt, /Filter title is aligned/);
+    assert.match(txt, /title is 12px off/);
+    assert.doesNotMatch(txt, /G-01/, 'passed checks are hidden by default');
+    assert.strictEqual(await page.locator('#detail-body img[data-zoom]').count(), 1);
+    await page.check('#d-all');
+    assert.match(await page.textContent('#detail-body'), /G-01/);
+    await page.press('body', 'Escape');
+    assert.strictEqual(await page.locator('#detail.on').count(), 0);
+    // a theme without results yet says so and does not break
+    await page.click('button[data-theme="Craft"]');
+    await page.waitForFunction(() => /No results for this theme yet/.test(document.querySelector('#detail-body').textContent));
+    assert.match(await page.textContent('#detail-body'), /not been tested yet/);
+    // the table refreshes every 3 s: the open panel stays
+    await page.waitForTimeout(3500);
+    assert.strictEqual(await page.locator('#detail.on').count(), 1);
+    assert.deepStrictEqual(errors, []);
+    await page.close();
+  } finally { await browser.close(); srv.close(); }
+});
+
+test('live files of a run: results and only the pictures of failing checks, uploaded once', async () => {
+  const sync = require('../src/sync');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-live-'));
+  fs.mkdirSync(path.join(dir, 'dawn'), { recursive: true });
+  ['a.png', 'b.png', 'c.png'].forEach((f) => fs.writeFileSync(path.join(dir, 'dawn', f), 'x'));
+  fs.writeFileSync(path.join(dir, 'report.html'), '<html></html>');
+  assert.strictEqual(sync.liveRunFiles(dir), null, 'no results.json yet');
+  fs.writeFileSync(path.join(dir, 'results.json'), '{"themes":[{"name":"Dawn","passes":[{"results":[{"status":"fail","shots":["dawn/a.png"]},{"status":"pass","shots":["dawn/b.png"]},{"status":"review","shots":["dawn/c.png"]}]}]}]}');
+  const rel = (fs0) => fs0.map((f) => path.relative(dir, f).split(path.sep).join('/')).sort();
+  assert.deepStrictEqual(rel(sync.liveRunFiles(dir)), ['dawn/a.png', 'dawn/c.png', 'report.html', 'results.json']);
+  fs.writeFileSync(path.join(dir, 'results.json'), '{"themes":[{"name":"Da');
+  assert.strictEqual(sync.liveRunFiles(dir), null, 'a half written results.json is skipped');
+  fs.writeFileSync(path.join(dir, 'results.json'), '{"themes":[{"name":"Dawn","passes":[{"results":[{"status":"fail","shots":["dawn/a.png"]}]}]}]}');
+  const sent = [];
+  const fetchImpl = async (url) => { sent.push(url.split('/media/')[1]); return { ok: true }; };
+  const s = { base: 'https://x.dev', headers: { Authorization: 'Bearer t' } };
+  const seen = new Map();
+  const files = sync.liveRunFiles(dir);
+  await sync.pushRunFiles(s, dir, 'r1', { files, seen, fetchImpl });
+  assert.deepStrictEqual(sent.sort(), ['r1/dawn/a.png', 'r1/report.html', 'r1/results.json']);
+  sent.length = 0;
+  await sync.pushRunFiles(s, dir, 'r1', { files, seen, fetchImpl });
+  assert.deepStrictEqual(sent, [], 'nothing changed, nothing uploaded');
+  fs.writeFileSync(path.join(dir, 'results.json'), '{"themes":[{"name":"Dawn","passes":[{"results":[{"status":"fail","shots":["dawn/a.png"]}]}]},{"name":"Craft","passes":[]}]}');
+  await sync.pushRunFiles(s, dir, 'r1', { files: sync.liveRunFiles(dir), seen, fetchImpl });
+  assert.deepStrictEqual(sent, ['r1/results.json'], 'only the changed file goes up');
+});

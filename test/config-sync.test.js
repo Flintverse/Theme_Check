@@ -339,7 +339,7 @@ test('the live page: click a theme to see its results, failures first, with pict
     await page.check('#d-all');
     assert.match(await page.textContent('#detail-body'), /G-01/);
     await page.press('body', 'Escape');
-    assert.strictEqual(await page.locator('#detail.on').count(), 0);
+    await page.waitForFunction(() => !document.querySelector('#detail.on')); // Back out of the drawer is a step in the address
     // a theme without results yet says so and does not break
     await page.click('button[data-theme="Craft"]');
     await page.waitForFunction(() => /No results for this theme yet/.test(document.querySelector('#detail-body').textContent));

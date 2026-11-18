@@ -115,7 +115,7 @@ async function upgradeReports(root, cfg, opts) {
   for (const runId of ids) {
     if (runId === going) continue;
     const rep = path.join(dir, runId, 'report.html');
-    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('class="lb"')) continue;
+    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('class="tcnav"')) continue;
     o.refresh({ root, cfg, runId, checklist: cfgLib.loadChecklist(root) });
     await sync.pushRunFiles(monitor, path.join(dir, runId), runId, { files: [rep], fetchImpl: o.fetchImpl });
     upgraded++;
@@ -143,7 +143,7 @@ async function runAgent(root, cfg, log) {
       if (Date.now() - lastOv >= 30000) {
         lastOv = Date.now();
         try { const r = await syncOverrides(root, cfg); if (r.changed) say('Manual verdicts synced for ' + r.changed + ' run(s); reports and numbers recalculated'); } catch (e) { say('Verdict sync failed: ' + e.message); }
-        try { const u = await upgradeReports(root, cfg); if (u.upgraded) say('Drew ' + u.upgraded + ' older report(s) again with the picture X button'); } catch (e) { say('Report upgrade failed: ' + e.message); }
+        try { const u = await upgradeReports(root, cfg); if (u.upgraded) say('Drew ' + u.upgraded + ' older report(s) again with the navigation bar and the picture X button'); } catch (e) { say('Report upgrade failed: ' + e.message); }
       }
       if (Date.now() - last < 60000) return;
       last = Date.now();

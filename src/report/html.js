@@ -52,6 +52,10 @@ figcaption{font:12px ui-monospace,monospace;color:var(--muted)}
 .FIXED{background:var(--pass);color:#fff}
 .note{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
 .note ul{margin:6px 0 0;padding-left:18px}
+.tcnav{position:sticky;top:0;z-index:40;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);font:600 14px system-ui}
+.tcnav a{color:var(--accent);text-decoration:none;padding:4px 8px;border-radius:8px}.tcnav a:hover{background:var(--na-bg)}
+.tcnav .back{border:1px solid var(--line);color:var(--ink)}
+.tcnav .here{margin-left:auto;font:12px ui-monospace,monospace;color:var(--muted)}
 .man{font:700 10px ui-monospace,monospace;padding:2px 6px;border-radius:4px;margin-left:6px;background:var(--accent);color:#fff;white-space:nowrap}
 .lb{display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.88);align-items:center;justify-content:center;padding:56px 16px 16px}
 .lb:target{display:flex}
@@ -59,6 +63,8 @@ figcaption{font:12px ui-monospace,monospace;color:var(--muted)}
 .lb .x{position:fixed;top:12px;right:12px;width:44px;height:44px;border-radius:999px;background:#fff;color:#111;font:700 22px/44px system-ui;text-align:center;text-decoration:none}
 .lb .bg{position:absolute;inset:0}
 `;
+// Links to every page of the tool (this page may not run scripts, so these are plain links; the dashboard is two folders up).
+const NAV = (run) => `<nav class="tcnav" aria-label="The tool"><a class="back" href="../../#runs">&larr; Back to the dashboard</a><a href="../../#live">Live</a><a href="../../#overview">Overview</a><a href="../../#issues">Issue tracker</a><a href="../../#runs">Runs</a><a href="../../#themes">Themes</a><a href="../../#schedule">Schedule</a><span class="here">Report ${esc(run.runId)}</span></nav>`;
 let lbCount = 0; // each picture gets its own pop-up (a pure CSS one: this page may not run scripts)
 
 const pill = (s) => `<span class="pill p-${esc(s)}">${esc(String(s).toUpperCase())}</span>`;
@@ -118,7 +124,7 @@ function render(run, checklist, prevRun) {
 
   const fixedHtml = fixed.length ? `<div class="note"><b>Fixed since the previous run (${fixed.length})</b><ul>${fixed.map((r) => `<li>${esc(r.theme)} / ${esc(r.layout)} / ${esc(r.id)}${chg('FIXED')}</li>`).join('')}</ul></div>` : '';
 
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body><div class="wrap">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body>${NAV(run)}<div class="wrap">
 <div><div class="eyebrow">Theme check | Findter</div><h1>Theme compatibility run ${esc(run.runId)}</h1></div>
 <dl class="facts"><div><dt>Environment</dt><dd>${esc(run.env)} (${esc(run.shop || '')})</dd></div><div><dt>Run</dt><dd>${esc(require('../lib/time').fmtStamp(run.startedAt))}</dd></div><div><dt>Themes</dt><dd>${themes.length}</dd></div><div><dt>Checklist</dt><dd>${checklist.items.length} items, v${esc(checklist.version)}</dd></div><div><dt>Compared with</dt><dd>${prevRun ? esc(prevRun.runId) : 'no earlier run'}</dd></div></dl>
 <div class="totals"><div class="t t-pass"><b>${t.pass}</b>PASS</div><div class="t t-fail"><b>${t.fail + (t.error || 0)}</b>FAIL</div><div class="t t-review"><b>${t.review}</b>REVIEW</div><div class="t t-na"><b>${t.na}</b>N/A</div></div>

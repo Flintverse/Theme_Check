@@ -70,7 +70,7 @@ svg.chart{width:100%;height:150px}
 .pbar{height:14px;background:var(--na-bg);border-radius:8px;overflow:hidden}.pbar i{display:block;height:100%;background:var(--accent);transition:width .6s}
 .st-queued{background:var(--na-bg);color:var(--na)}.st-installing,.st-installed,.st-setup{background:var(--warn-bg);color:var(--warn)}.st-testing{background:var(--accent);color:var(--accent-ink)}.st-done{background:var(--pass-bg);color:var(--pass)}.st-failed{background:var(--fail-bg);color:var(--fail)}
 .linkbtn{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline}
-#detail{position:fixed;inset:0;display:none;z-index:15;background:rgba(0,0,0,.45)}#detail.on{display:flex;justify-content:flex-end}
+#detail{position:fixed;left:0;right:0;bottom:0;top:var(--hh,100px);display:none;z-index:15;background:rgba(0,0,0,.45)}#detail.on{display:flex;justify-content:flex-end}
 #detail .panel{background:var(--bg);width:min(1040px,100%);height:100%;overflow-y:auto;overflow-x:hidden;padding:16px 16px 48px;display:flex;flex-direction:column;gap:16px;box-shadow:-8px 0 24px rgba(0,0,0,.25);overscroll-behavior:contain}
 #detail .panel>*{flex:0 0 auto;min-width:0}
 #detail .dhead{position:sticky;top:-16px;z-index:2;background:var(--bg);padding:12px 0 8px;justify-content:space-between}
@@ -79,6 +79,11 @@ svg.chart{width:100%;height:150px}
 .vb{display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;cursor:pointer}
 .vb input{width:18px;height:18px;margin:0;cursor:pointer}
 .lb-x{position:fixed;top:14px;right:14px;width:46px;height:46px;border-radius:999px;border:0;background:#fff;color:#111;font:700 26px/46px system-ui;cursor:pointer;z-index:2}
+a.brand{color:inherit;text-decoration:none}
+.navbtn{font:inherit;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}.navbtn:disabled{opacity:.45;cursor:default}
+.crumbs{max-width:1240px;margin:0 auto;padding:0 16px 8px;font-size:13px;color:var(--muted)}.crumbs a{color:var(--accent);text-decoration:none}.crumbs a:hover{text-decoration:underline}
+#detail .dnav{font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}#detail .dnav a{color:var(--accent);text-decoration:none;font-weight:600}
+#detail .dbtns{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .chk{width:100%;min-width:760px;border-collapse:collapse}.chk td,.chk th{vertical-align:top;padding:6px 8px;border-top:1px solid var(--line);text-align:left}.chk .ev{max-width:200px;min-width:120px}
 .log{max-height:300px;overflow:auto;font:12px/1.5 ui-monospace,monospace}.log div{padding:2px 0;border-bottom:1px solid var(--line)}
 @media (max-width:640px){.bar-row{grid-template-columns:90px 1fr 30px}}
@@ -86,9 +91,10 @@ svg.chart{width:100%;height:150px}
 </head>
 <body>
 <header><div class="bar">
-  <span class="brand">Theme check</span><span id="mode" class="badge">...</span><span id="who" class="muted small"></span>
+  <button id="back" class="navbtn" title="Back to the previous page" disabled>&larr; Back</button>
+  <a class="brand" href="#overview" title="Home (Overview)">Theme check</a><span id="mode" class="badge">...</span><span id="who" class="muted small"></span>
   <nav id="nav"></nav>
-</div></header>
+</div><div class="crumbs" id="crumbs" aria-label="You are here"></div></header>
 <div id="detail" role="dialog" aria-modal="true" aria-label="Results of one theme"><div class="panel" id="detail-body"></div></div>
 <div id="lightbox" role="dialog" aria-label="Picture"></div>
 <main id="main"><div class="card">Loading...</div></main>
@@ -157,6 +163,7 @@ svg.chart{width:100%;height:150px}
     var m = $('mode');
     m.textContent = S.readOnly ? 'READ-ONLY COPY' + (S.publishedAt ? ' · ' + tsLocal(S.publishedAt).slice(0, 10) : '') : 'LOCAL · EDITABLE';
     m.className = 'badge' + (S.readOnly ? '' : ' local');
+    crumbs();
   }
 
   function render() {
@@ -405,13 +412,36 @@ svg.chart{width:100%;height:150px}
   var DET = { name: null };
   var CHK_CLASS = { pass: 'st-done', fail: 'st-failed', error: 'st-failed', review: 'st-installing', na: 'st-queued', skip: 'st-queued' };
   var CHK_ORDER = { fail: 0, review: 1, pass: 2, skip: 3, na: 4 };
-  function openTheme(name) {
-    clearTimeout(DET.t);
-    DET = { name: name, run: P && P.runId, data: null, err: null, msg: '', t: null, showAll: false, last: null };
-    $('detail').classList.add('on');
-    drawDetail(); fetchDetail();
+  /* ---- Where you are: #<tab> or #live/<theme>. Every page has a way back and a way to any other page. ---- */
+  var IDX = 0, PENDING = false; // IDX = position in this page's own history (0 = nothing to go back to), PENDING = the next drawer was opened by a click
+  function parseHash() { var p = location.hash.slice(1).split('/'); var th = ''; try { th = p[1] ? decodeURIComponent(p.slice(1).join('/')) : ''; } catch (e) { th = ''; } return { tab: p[0], theme: th }; }
+  function tabLabel(id) { var t = TABS.filter(function (x) { return x[0] === id; })[0]; return t ? t[1] : id; }
+  function crumbs() {
+    var c = $('crumbs'); if (!c) return;
+    var h = '<a href="#overview">Theme check</a> &rsaquo; ';
+    h += DET.name ? '<a href="#' + TAB + '">' + esc(tabLabel(TAB)) + '</a> &rsaquo; <b>' + esc(DET.name) + '</b>' : '<b>' + esc(tabLabel(TAB)) + '</b>';
+    c.innerHTML = h;
+    var b = $('back'); if (b) b.disabled = IDX === 0;
+    var hd = document.querySelector('header'); if (hd) document.documentElement.style.setProperty('--hh', hd.offsetHeight + 'px');
   }
-  function closeTheme() { clearTimeout(DET.t); DET = { name: null }; $('detail').classList.remove('on'); }
+  function route() {
+    var r = parseHash();
+    var tab = TABS.some(function (t) { return t[0] === r.tab; }) ? r.tab : TAB;
+    if (tab !== TAB) { TAB = tab; render(); }
+    if (tab === 'live' && r.theme) { if (DET.name !== r.theme) { var pushed = DET.name ? DET.pushed : PENDING; PENDING = false; showTheme(r.theme, pushed); } }
+    else if (DET.name) hideTheme();
+    if (S) nav(); else crumbs();
+  }
+  function openTheme(name) { PENDING = true; location.hash = '#live/' + encodeURIComponent(name); }
+  function closeTheme() { if (DET.pushed) history.back(); else { history.replaceState({ i: IDX }, '', '#live'); route(); } }
+  function goTheme(name) { history.replaceState({ i: IDX }, '', '#live/' + encodeURIComponent(name)); route(); } // previous / next theme: no new history entry
+  function showTheme(name, pushed) {
+    clearTimeout(DET.t);
+    DET = { name: name, run: P && P.runId, data: null, err: null, msg: '', t: null, showAll: false, last: null, pushed: !!pushed };
+    $('detail').classList.add('on');
+    drawDetail(); fetchDetail(); crumbs();
+  }
+  function hideTheme() { clearTimeout(DET.t); DET = { name: null }; $('detail').classList.remove('on'); crumbs(); }
   function fetchDetail() {
     clearTimeout(DET.t);
     var name = DET.name; if (!name) return;
@@ -430,7 +460,12 @@ svg.chart{width:100%;height:150px}
     var r = DET.data && DET.data.themes ? DET.data.themes.filter(function (x) { return x.name === name; })[0] : null;
     var info = {}; (S && S.checklist || []).forEach(function (c) { info[c.id] = c; });
     var items = OV.run === DET.run ? OV.items : {};
-    var h = '<div class="row dhead"><h2>' + esc(name) + (t ? ' <span class="pill st-' + esc(t.status) + '">' + esc(t.status.toUpperCase()) + '</span>' : '') + '</h2><button id="d-close">Close</button></div>';
+    var names = (P && P.themes || []).map(function (x) { return x.name; }), at = names.indexOf(name);
+    var h = '<div class="dhead"><div class="dbtns"><button id="d-close" class="navbtn">&larr; Back to Live</button>' +
+      '<button class="navbtn" data-go="' + esc(at > 0 ? names[at - 1] : '') + '"' + (at > 0 ? '' : ' disabled') + ' title="Previous theme in the list">&lsaquo; Previous theme</button>' +
+      '<button class="navbtn" data-go="' + esc(at >= 0 && at < names.length - 1 ? names[at + 1] : '') + '"' + (at >= 0 && at < names.length - 1 ? '' : ' disabled') + ' title="Next theme in the list">Next theme &rsaquo;</button></div>' +
+      '<h2 style="margin:10px 0 0">' + esc(name) + (t ? ' <span class="pill st-' + esc(t.status) + '">' + esc(t.status.toUpperCase()) + '</span>' : '') + '</h2>' +
+      '<div class="dnav" style="margin-top:6px"><span>Go to:</span><a href="#live">Live</a><a href="#overview">Overview</a><button class="linkbtn" data-act="issues">Issue tracker (this theme)</button><a href="#runs">Runs</a><a href="#themes">Themes</a><a href="#schedule">Schedule</a></div></div>';
     if (t) h += '<p class="muted small" style="margin:0">' + esc(t.step || '') + (P.running && t.activeSince ? ' (testing now)' : '') + '</p>';
     if (DET.err) h += '<div class="note">' + esc(DET.err) + '</div>';
     if (DET.msg) h += '<div class="ok">' + esc(DET.msg) + '</div>';
@@ -637,6 +672,11 @@ svg.chart{width:100%;height:150px}
     var lb = $('lightbox');
     var tb = e.target && e.target.closest ? e.target.closest('[data-theme]') : null;
     if (tb) { openTheme(tb.getAttribute('data-theme')); return; }
+    var gb = e.target && e.target.closest ? e.target.closest('[data-go]') : null;
+    if (gb) { if (gb.getAttribute('data-go')) goTheme(gb.getAttribute('data-go')); return; }
+    var ab = e.target && e.target.closest ? e.target.closest('[data-act="issues"]') : null;
+    if (ab) { issueFilter = { status: '', theme: DET.name || '', check: '', env: '' }; location.hash = '#issues'; return; }
+    if (e.target && (e.target.id === 'back' || (e.target.closest && e.target.closest('#back')))) { if (IDX > 0) history.back(); return; }
     if (e.target && (e.target.id === 'd-close' || e.target.id === 'detail')) { closeTheme(); return; }
     if (e.target && e.target.getAttribute && e.target.getAttribute('data-vk')) return; // handled by the change listener
     if (e.target && e.target.id === 'd-all') { DET.showAll = e.target.checked; drawDetail(); return; }
@@ -649,9 +689,16 @@ svg.chart{width:100%;height:150px}
     setVerdict(k, t.checked ? t.getAttribute('data-v') : null, t.getAttribute('data-orig'));
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { if ($('lightbox').style.display === 'flex') $('lightbox').style.display = 'none'; else if (DET.name) closeTheme(); } });
-  window.addEventListener('hashchange', function () { var h = location.hash.slice(1); if (TABS.some(function (t) { return t[0] === h; })) { TAB = h; render(); } });
-  var h0 = location.hash.slice(1); if (TABS.some(function (t) { return t[0] === h0; })) TAB = h0;
-  load().then(function () { return loadProgress(); }).then(function () { if (P && P.running && !location.hash) { TAB = 'live'; render(); } });
+  window.addEventListener('resize', function () { crumbs(); });
+  window.addEventListener('hashchange', function () {
+    var st = history.state;
+    if (!st || typeof st.i !== 'number') { IDX += 1; history.replaceState({ i: IDX }, ''); } else IDX = st.i; // a new page in this tool's own history
+    route();
+  });
+  IDX = (history.state && typeof history.state.i === 'number') ? history.state.i : 0;
+  history.replaceState({ i: IDX }, '');
+  var h0 = parseHash().tab; if (TABS.some(function (t) { return t[0] === h0; })) TAB = h0;
+  load().then(function () { return loadProgress(); }).then(function () { if (P && P.running && !location.hash) { TAB = 'live'; render(); } route(); });
 })();
 </script>
 </body>

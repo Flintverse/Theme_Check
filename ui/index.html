@@ -445,9 +445,13 @@ a.brand{color:inherit;text-decoration:none}
   function openTheme(name, run) { PENDING = true; location.hash = run ? '#runs/' + encodeURIComponent(run) + '/' + encodeURIComponent(name) : '#live/' + encodeURIComponent(name); }
   function closeTheme() {
     if (DET.pushed) { // one step back; when that step is the very same address (a link opened twice), leave it by hand
-      var n0 = DET.name, r0 = DET.run;
+      var onPop = function () { // fires when the browser has gone back; a real change of address is handled by the hashchange route first
+        window.removeEventListener('popstate', onPop);
+        setTimeout(function () { if (DET.name && parseHash().theme) { history.replaceState({ i: IDX }, '', DET.live ? '#live' : '#runs'); route(); } }, 0);
+      };
+      window.addEventListener('popstate', onPop);
+      setTimeout(function () { window.removeEventListener('popstate', onPop); }, 3000);
       history.back();
-      setTimeout(function () { if (DET.name === n0 && DET.run === r0 && parseHash().theme) { history.replaceState({ i: IDX }, '', DET.live ? '#live' : '#runs'); route(); } }, 400);
     } else { history.replaceState({ i: IDX }, '', DET.live ? '#live' : '#runs'); route(); } }
   function goTheme(name) { history.replaceState({ i: IDX }, '', DET.live ? '#live/' + encodeURIComponent(name) : '#runs/' + encodeURIComponent(DET.run) + '/' + encodeURIComponent(name)); route(); } // previous / next theme: no new history entry
   function showTheme(name, pushed, run, live) {

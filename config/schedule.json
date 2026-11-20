@@ -1,9 +1,9 @@
 {
-  "enabled": false,
-  "mode": "daily",
+  "enabled": true,
+  "mode": "everyNDays",
   "time": "09:00",
   "weekday": "MON",
-  "everyDays": 7,
+  "everyDays": 3,
   "env": "staging",
   "batches": "all",
   "mail": true

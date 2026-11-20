@@ -523,21 +523,39 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
 
 // Before the tests: is Findter on the storefront of this theme? Looks at the collection page again and again (a fresh load each
 // time, every 20 s) until its container shows, or the time is up. A password page is reported as such.
+// Is Findter really on the storefront? Looks at the given collection page; some themes do not draw Findter on the
+// "all products" page (/collections/all) but do on a real collection. So when the first page has none, the real collections
+// linked on that page (the store menu) are tried too, and the page that works is returned as url: the checks then use it.
 async function waitFindter({ browser, url, cookies, password, maxMs, selectorMs, pollMs }) {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, storageState: cookies && cookies.length ? { cookies, origins: [] } : undefined });
   const page = await ctx.newPage();
   const until = Date.now() + (maxMs || 240000);
-  let last = 'the page did not load', n = 0;
+  let last = 'the page did not load', n = 0, others = null;
+  const tryUrl = async (u) => {
+    await page.goto(u, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const gate = await passGate(page, u, password);
+    if (gate.blocked) return { blocked: gate.reason };
+    return { has: await page.waitForSelector('#fdt-container', { timeout: selectorMs || 20000 }).then(() => true, () => false) };
+  };
   try {
     while (Date.now() < until) {
       n++;
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        const gate = await passGate(page, url, password);
-        if (gate.blocked) return { ok: false, blocked: true, detail: gate.reason };
-        await page.waitForSelector('#fdt-container', { timeout: selectorMs || 20000 });
-        return { ok: true, detail: '', looks: n };
-      } catch (e) { last = `Findter's container (#fdt-container) is not on the collection page after ${n} look(s) over ${Math.round((maxMs || 240000) / 60000)} minutes`; }
+        const r = await tryUrl(url);
+        if (r.blocked) return { ok: false, blocked: true, detail: r.blocked };
+        if (r.has) return { ok: true, detail: '', looks: n, url };
+        if (!others) others = await page.evaluate(() => {
+          const seen = new Set();
+          return Array.from(document.querySelectorAll('a[href*="/collections/"]')).map((a) => { try { return new URL(a.href, location.href).pathname; } catch (e) { return ''; } })
+            .filter((p) => /^\/collections\/[^/]+\/?$/.test(p) && !/^\/collections\/(all|vendors|types)\/?$/.test(p) && !seen.has(p) && seen.add(p)).slice(0, 4);
+        }).catch(() => []);
+        for (const p of others) {
+          const u = new URL(p, url).toString();
+          const o = await tryUrl(u);
+          if (o.has) return { ok: true, detail: '', looks: n, url: u, note: 'Findter is not drawn on ' + new URL(url).pathname + ' in this theme; the checks ran on ' + p + ' instead.' };
+        }
+        last = "Findter's container (#fdt-container) is not on the collection page" + (others.length ? ' (nor on ' + others.join(', ') + ')' : '') + ' after ' + n + ' look(s) over ' + Math.round((maxMs || 240000) / 60000) + ' minutes';
+      } catch (e) { last = "Findter's container (#fdt-container) is not on the collection page after " + n + ' look(s) over ' + Math.round((maxMs || 240000) / 60000) + ' minutes'; }
       await page.waitForTimeout(pollMs || 20000);
     }
     return { ok: false, detail: last };

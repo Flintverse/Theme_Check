@@ -10,6 +10,22 @@ function server(handler) {
   return new Promise((ok) => srv.listen(0, '127.0.0.1', () => ok(srv)));
 }
 
+test('waitFindter: a theme that does not draw Findter on /collections/all is tried on a real collection from the menu', async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const srv = await server((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    if (req.url.startsWith('/collections/accessory')) res.end('<!doctype html><body><div id="fdt-container">filters</div>');
+    else res.end('<!doctype html><body><a href="/collections/all">All</a><a href="/collections/accessory">Accessory</a><main>no Findter here</main>');
+  });
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const r = await waitFindter({ browser, url: base + '/collections/all', maxMs: 20000, selectorMs: 600, pollMs: 200 });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.url, base + '/collections/accessory');
+    assert.match(r.note, /not drawn on \/collections\/all/);
+  } finally { srv.close(); await browser.close(); }
+});
+
 test('waitFindter: ok as soon as the Findter container shows; a clear reason when it never does; a password page is named', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   const html = (body) => (req, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(`<!doctype html><body>${body}`); };

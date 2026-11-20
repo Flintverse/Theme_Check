@@ -103,6 +103,7 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
     }
     if (!ready.ok) { out.setupFailed = { reason: ready.blocked ? 'storefront_blocked' : 'findter_not_on_storefront', detail: ready.detail }; return out; }
     out.setup.storefrontReady = `Findter showed on the storefront (look ${ready.looks})`;
+    if (ready.url && ready.url !== prev.url) { prev.url = ready.url; out.setup.collectionNote = ready.note; log(`  ${theme.name}: ${ready.note}`); }
 
     const common = { browser, url: prev.url, outDir, thresholds: cfg.thresholds, keyword: cfg.keyword, cookies: prev.cookies, password: env.storefrontPassword || process.env[`STOREFRONT_PASSWORD_${envName(env)}`] };
     const P = (layout, viewportName, rel) => runPass(Object.assign({}, common, { layout, viewportName, viewport: cfg.viewports[viewportName], relDir: `${key}/${rel}` }));

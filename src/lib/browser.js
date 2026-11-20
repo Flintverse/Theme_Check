@@ -18,10 +18,28 @@ const profileDirFor = (root, env) => path.join(root, `.profile-${env}`);
 //   'headless' no window at all (--headless flag; may hit that robot check)
 //   'show'     a normal visible window (login, --show)
 // true / false are accepted for older callers: true = 'quiet', false = 'show'.
+// When this Chrome is stopped from outside (a stopped run, a killed task), it records "did not shut down correctly". The next
+// start then shows the "Restore pages?" bubble and re-opens the old tabs, even moving the off-screen window onto the screen.
+// So before every start the profile is set back to "closed normally" and "open a new tab on start".
+function markCleanExit(profileDir) {
+  for (const rel of [path.join('Default', 'Preferences')]) {
+    const f = path.join(profileDir, rel);
+    try {
+      if (!fs.existsSync(f)) continue;
+      const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+      j.profile = Object.assign({}, j.profile, { exit_type: 'Normal', exited_cleanly: true });
+      j.session = Object.assign({}, j.session, { restore_on_startup: 5 }); // 5 = the new tab page, never the previous tabs
+      fs.writeFileSync(f, JSON.stringify(j));
+    } catch (e) { /* a profile that cannot be read is left alone */ }
+  }
+  try { fs.rmSync(path.join(profileDir, 'Default', 'Sessions'), { recursive: true, force: true }); } catch (e) { /* the saved tabs of the last session: not needed */ }
+}
+
 async function openAdmin(profileDir, mode) {
   const m = mode === true ? 'quiet' : mode === false ? 'show' : (mode || 'quiet');
   fs.mkdirSync(profileDir, { recursive: true });
-  const args = ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-features=CalculateNativeWinOcclusion'];
+  markCleanExit(profileDir);
+  const args = ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-features=CalculateNativeWinOcclusion', '--hide-crash-restore-bubble', '--disable-session-crashed-bubble', '--no-first-run', '--no-default-browser-check', '--disable-infobars'];
   if (m === 'quiet') args.push('--window-position=-2400,-2400', '--window-size=1400,950');
   const ctx = await chromium.launchPersistentContext(profileDir, { channel: 'chrome', headless: m === 'headless', viewport: { width: 1400, height: 950 }, args });
   ctx._tcQuiet = m !== 'show';
@@ -57,4 +75,4 @@ const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
 const keyOf = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-module.exports = { chromium, openAdmin, loginFlow, showWindow, profileDirFor, LoginRequired, norm, keyOf, esc };
+module.exports = { chromium, openAdmin, markCleanExit, loginFlow, showWindow, profileDirFor, LoginRequired, norm, keyOf, esc };

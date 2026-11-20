@@ -172,11 +172,88 @@ async function checkMerge(p) {
   await tg.click({ force: true, timeout: 2000 }).catch(() => {});
 }
 
+// Price slider. Finds the "Price" filter in whatever layout is on screen, opens it when it is collapsed (the horizontal layout
+// shows it as a dropdown, the off-canvas layout as a list inside the drawer), then looks at the pixels of the picture:
+// is the middle of each dot on the middle of the line?
+function dotsOnLine(buf) {
+  const img = PNG.sync.read(buf);
+  const W = img.width, H = img.height;
+  const dark = (x, y) => { const i = (y * W + x) * 4; return img.data[i + 3] > 200 && (img.data[i] * 0.3 + img.data[i + 1] * 0.59 + img.data[i + 2] * 0.11) < 110; };
+  const dots = [];
+  let cur = null;
+  for (let x = 0; x < W; x++) {
+    let top = -1, bot = -1;
+    for (let y = 0; y < H; y++) if (dark(x, y)) { if (top < 0) top = y; bot = y; }
+    const big = top >= 0 && bot - top + 1 >= 9; // the line is about 5 px thick, a dot about 16
+    if (big) { if (!cur) cur = { x0: x, x1: x, top, bot }; else { cur.x1 = x; cur.top = Math.min(cur.top, top); cur.bot = Math.max(cur.bot, bot); } }
+    else if (cur && x - cur.x1 > 2) { dots.push(cur); cur = null; }
+  }
+  if (cur) dots.push(cur);
+  return { scale: img.width, dots: dots.filter((d) => d.x1 - d.x0 >= 6).map((d) => ({ x: (d.x0 + d.x1) / 2, centre: (d.top + d.bot) / 2, size: d.bot - d.top + 1 })) };
+}
+
+async function checkPriceSlider(p) {
+  const { page } = p;
+  const found = await page.evaluate(() => {
+    const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
+    const titles = Array.from(document.querySelectorAll('#fdt-container *')).filter((e) => e.children.length <= 2 && /^price$/i.test((e.innerText || '').trim()) && vis(e));
+    for (const t of titles) {
+      let n = t;
+      for (let i = 0; i < 7 && n; i++) {
+        const sl = n.querySelector && n.querySelector('fdt-slider');
+        if (sl) { sl.setAttribute('data-tc-price', '1'); t.setAttribute('data-tc-price-title', '1'); return true; }
+        n = n.parentElement;
+      }
+    }
+    return false;
+  });
+  if (!found) { p.add('V-04', 'na', "No 'Price' filter with a slider on this collection."); return; }
+  const slider = page.locator('[data-tc-price="1"]');
+  const title = page.locator('[data-tc-price-title="1"]');
+  let opened = false;
+  if (!(await slider.isVisible().catch(() => false))) { await title.click({ force: true, timeout: 4000 }).catch(() => {}); opened = true; await page.waitForTimeout(1500); }
+  const cleanup = async () => {
+    if (opened) { await title.click({ force: true, timeout: 3000 }).catch(() => {}); await page.waitForTimeout(500); }
+    await page.evaluate(() => document.querySelectorAll('[data-tc-price],[data-tc-price-title]').forEach((e) => { e.removeAttribute('data-tc-price'); e.removeAttribute('data-tc-price-title'); })).catch(() => {});
+  };
+  if (!(await slider.isVisible().catch(() => false))) { p.add('V-04', 'review', "The 'Price' filter was found but its slider did not open. Look at the picture.", [await p.shot('V-04-slider')]); await cleanup(); return; }
+  await slider.scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(400);
+  const track = await page.locator('[data-tc-price="1"] .fdt-range-slider').first().boundingBox().catch(() => null);
+  const shot = await p.shot('V-04-price-slider');
+  if (!track) { p.add('V-04', 'review', 'The Price slider is open but its line was not found. Look at the picture.', [shot]); await cleanup(); return; }
+  const clip = { x: Math.max(0, track.x - 14), y: Math.max(0, track.y + track.height / 2 - 16), width: track.width + 28, height: 32 };
+  const buf = await page.screenshot({ clip }).catch(() => null);
+  if (!buf) { p.add('V-04', 'review', 'Could not take a close-up of the slider. Look at the picture.', [shot]); await cleanup(); return; }
+  const lineY = track.y + track.height / 2 - clip.y;
+  const res = dotsOnLine(buf);
+  const k = res.scale / clip.width;
+  const diffs = res.dots.map((d) => Math.round(Math.abs(d.centre / k - lineY) * 10) / 10);
+  if (res.dots.length < 2) p.add('V-04', 'review', "Found the Price slider but could not see both dots in the picture. Look at the picture.", [shot]);
+  else if (Math.max.apply(null, diffs) > 2.5) p.add('V-04', 'fail', 'A dot is ' + Math.max.apply(null, diffs) + 'px away from the middle of the line (limit 2.5px).', [shot]);
+  else p.add('V-04', 'pass', 'Price slider: both dots are on the middle of the line (off by ' + diffs.join(' and ') + ' px).', [shot]);
+  await cleanup();
+}
+
+// Scroll-to-top: scroll fast, with the mouse wheel, down to the bottom of the page like a person, then look for the arrow.
 async function checkScrollTop(p) {
   const { page } = p;
-  await page.evaluate(() => window.scrollTo(0, 1600));
-  await page.waitForTimeout(900);
-  await p.m('V-06', 'scroll');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
+  await page.mouse.move(600, 400);
+  for (let i = 0; i < 60; i++) {
+    await page.mouse.wheel(0, 1200);
+    await page.waitForTimeout(60);
+    if (await page.evaluate(() => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4)) break;
+  }
+  await page.waitForTimeout(1200);
+  let r = await page.evaluate(measure, { id: 'V-06', opts: p.T }).catch((e) => ({ status: 'error', detail: String(e.message).slice(0, 160) }));
+  if (r.status === 'fail') { // give it a moment and a little more movement, then look again
+    await page.mouse.wheel(0, -300); await page.waitForTimeout(200); await page.mouse.wheel(0, 600);
+    await page.waitForTimeout(2000);
+    r = await page.evaluate(measure, { id: 'V-06', opts: p.T }).catch((e) => ({ status: 'error', detail: String(e.message).slice(0, 160) }));
+  }
+  p.add('V-06', r.status, r.detail, [await p.shot('V-06-scroll-bottom')]);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
 }
@@ -241,13 +318,11 @@ async function desktopPass(p, c) {
   await p.m('V-01', 'search-boxes');
   await p.m('V-02', 'count-line');
   await checkHover(p);
-  const slider = page.locator('#fdt-container fdt-slider').first();
-  if (await slider.count()) { await slider.scrollIntoViewIfNeeded().catch(() => {}); p.add('V-04', 'review', 'Look at the picture: both dots centred on the line.', [await p.shot('V-04-slider')]); }
-  else p.add('V-04', 'na', 'No price slider on this collection.');
+  await checkPriceSlider(p);
   await checkMerge(p);
   await p.m('V-07', 'checkbox');
   await checkSelectedState(p);
-  p.add('V-12', 'review', 'Look at the picture: icons not enlarged or turned into blobs.', [await p.shot('V-12-icons')]);
+  await p.m('V-12', 'icons');
   if (drawerOpen) await closeDrawer(page);
   await page.evaluate(() => window.scrollTo(0, 0));
   await p.m('V-08', 'toolbar');
@@ -309,10 +384,10 @@ async function searchPass(p, c) {
   const m = await page.evaluate(measureSuggestion, { opts: p.T });
   const typedShot = await p.shot('search-typed');
   p.add(P.usable, typed ? 'pass' : 'fail', typed ? '' : 'Search bar is not visible or cannot take text.', [sShot]);
-  p.add(P.shell, m.widget && m.watermark ? 'pass' : 'fail', m.widget ? (m.watermark ? '' : "Findter's widget shows but the 'Powered by Findter' watermark is missing.") : (m.embedLoaded ? "Findter's search suggestion embed is on but its widget did not appear." : "Findter's Search suggestion embed is not active on this theme (its files are not on the page). Turn it on under App embeds, then retest."), [typedShot]);
+  p.add(P.shell, m.widget && m.watermark ? 'pass' : 'fail', m.widget ? (m.watermark ? '' : "Findter's widget shows but the 'Powered by Findter' watermark is missing.") : (m.hiddenCopy ? "Findter's search widget is on the page, but it is attached to a hidden copy of the theme's search form, so the shopper does not see it (the theme's own suggestion box shows instead)." : m.embedLoaded ? "Findter's search suggestion embed is on but its widget did not appear." : "Findter's Search suggestion embed is not active on this theme (its files are not on the page). Turn it on under App embeds, then retest."), [typedShot]);
   const both = m.widget && m.themeBoxes > 0;
   const theirsOnly = !m.widget && m.themeBoxes > 0;
-  p.add(P.one, both ? 'fail' : theirsOnly ? 'fail' : m.widget ? 'pass' : 'na', both ? "Findter's widget and the theme's own suggestion box are shown together." : theirsOnly ? "Only the theme's own search layout is shown (Findter's is not)." : m.widget ? '' : 'Nothing to compare: Findter widget is not showing.', [typedShot]);
+  p.add(P.one, both ? 'fail' : theirsOnly ? 'fail' : m.widget ? 'pass' : 'na', both ? "Findter's widget and the theme's own suggestion box are shown together." : theirsOnly ? (m.hiddenCopy ? "Only the theme's own suggestion box is shown. Findter's widget is on the page but attached to a hidden copy of the search form." : "Only the theme's own search layout is shown (Findter's is not).") : m.widget ? '' : 'Nothing to compare: Findter widget is not showing.', [typedShot]);
   if (!mobile) {
     if (!m.widget) p.add(P.size, 'na', 'Widget is not showing.');
     else {
@@ -328,7 +403,7 @@ async function searchPass(p, c) {
   } else {
     p.add(P.back, m.backArrow ? 'pass' : 'fail', m.backArrow ? '' : "No back arrow ('←') next to Findter's search bar.", [typedShot]);
     if (m.backArrow) {
-      const back = page.locator('fdt-search-suggestion-widget').locator('xpath=ancestor::*[contains(@class,"search") or self::dialog][1]').locator('button, a, [role=button]').filter({ has: page.locator('svg') }).first();
+      const back = page.locator('.search-filters__search-suggestion-close-button:visible').first();
       await back.click({ force: true, timeout: 3000 }).catch(() => {});
       await page.waitForTimeout(1000);
       const m2 = await page.evaluate(measureSuggestion, { opts: p.T });
@@ -369,4 +444,4 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
   return { layout, viewport: viewportName, results: p.results, blocked };
 }
 
-module.exports = { runPass, load, collectors, changedRatio, detectLayout };
+module.exports = { runPass, load, collectors, changedRatio, detectLayout, dotsOnLine };

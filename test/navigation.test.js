@@ -190,3 +190,60 @@ test('reports: one page per theme next to the full one; the drawer links to the 
     await page.close();
   } finally { await browser.close(); srv.close(); }
 });
+
+test('any run: the Runs tab lists the themes, a theme of an old run opens in the drawer, and its results can be changed there', async () => {
+  const ui = fs.readFileSync(path.join(SRC, 'ui', 'index.html'));
+  const results = { runId: 'old-run', themes: [{ name: 'Dawn', passes: [{ layout: 'vertical', viewport: 'desktop', results: [{ id: 'V-10', layout: 'vertical', status: 'fail', detail: 'old failure', shots: [] }] }] }, { name: 'Craft', passes: [] }] };
+  const base = { readOnly: false, mediaLocal: true, envs: ['staging'], themes: [], schedule: { enabled: false, mode: 'weekly', weekday: 'MON', everyDays: 7, time: '07:30', env: 'staging', batches: 'all', mail: true, description: 'x' },
+    runs: [{ runId: 'old-run', date: '2026-11-10', env: 'staging', themesTested: 2, themesTotal: 2, themesWithIssues: 1, failedChecks: 1, newCount: 0, fixedCount: 0, worstThemes: [], themeNames: ['Dawn', 'Craft'] }],
+    issues: { items: {} }, themeStatus: [], checklist: [{ id: 'V-10', title: 'Tick', severity: 'minor' }], library: {} };
+  const puts = [];
+  const srv = http.createServer((req, res) => {
+    const send = (o) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (req.url === '/api/state') return send(base);
+    if (req.url === '/api/progress') return send({ running: false, none: true });
+    if (req.url === '/runs/old-run/results.json') return send(results);
+    if (req.url === '/runs/old-run/overrides.json') return send({ rev: 0, items: {} });
+    if (req.url === '/api/overrides' && req.method === 'PUT') { let b = ''; req.on('data', (d) => { b += d; }).on('end', () => { const j = JSON.parse(b); puts.push(j); send({ ok: true, rev: 1, items: j.status ? { [j.key]: { status: j.status, orig: j.orig, by: 'you' } } : {} }); }); return; }
+    res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(ui);
+  });
+  await listenOn(srv);
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`http://127.0.0.1:${srv.address().port}/#runs`);
+    await page.waitForSelector('summary');
+    await page.click('summary');
+    await page.click('button[data-run="old-run"][data-theme="Dawn"]');
+    await page.waitForSelector('#detail.on .chk');
+    assert.strictEqual(await hash(page), '#runs/old-run/Dawn');
+    assert.match(await page.textContent('#crumbs'), /Runs\s*›\s*old-run\s*›\s*Dawn/);
+    assert.match(await page.textContent('#detail-body'), /old failure/);
+    assert.match(await page.textContent('#detail-body'), /Back to Runs/);
+    assert.strictEqual(await page.isDisabled('#detail-body [data-go="Craft"]'), false, 'next theme of that run');
+    // change a result of that old run
+    await page.locator('input[data-vk="Dawn|vertical|desktop|V-10"][data-v="pass"]').check();
+    await page.waitForFunction(() => /Saved/.test(document.getElementById('detail-body').textContent));
+    assert.deepStrictEqual(puts[0], { run: 'old-run', key: 'Dawn|vertical|desktop|V-10', status: 'pass', orig: 'fail' });
+    assert.strictEqual(await page.getAttribute('#detail-body a[href$="report-dawn.html"]', 'href'), 'runs/old-run/report-dawn.html');
+    // a shared link opens it too, and Close stays inside the tool
+    await page.goto(`http://127.0.0.1:${srv.address().port}/#runs/old-run/Dawn`);
+    await page.waitForSelector('#detail.on .chk');
+    await page.click('#d-close');
+    await page.waitForFunction(() => location.hash === '#runs' && !document.querySelector('#detail.on'));
+    assert.deepStrictEqual(errors, []);
+    await page.close();
+  } finally { await browser.close(); srv.close(); }
+});
+
+test('a theme report links to the dashboard to change its results; the full report links each theme to its own report', () => {
+  const { renderAll } = require('../src/report/html');
+  const mk = (name) => ({ name, passes: [{ layout: 'vertical', viewport: 'desktop', results: [{ id: 'V-10', layout: 'vertical', status: 'fail', detail: name + ' detail', shots: [] }] }] });
+  const pages = renderAll({ runId: '2026-11-20-staging', env: 'staging', shop: 's', startedAt: '2026-11-20T07:30:00.000Z', themes: [mk('Dawn'), mk('Craft Plus')] }, checklist, null);
+  assert.match(pages[1].html, /href="..\/..\/#runs\/2026-11-20-staging\/Dawn">Change the results of this theme/);
+  assert.match(pages[2].html, /#runs\/2026-11-20-staging\/Craft%20Plus/);
+  assert.ok(pages[0].html.includes('href="report-dawn.html">Dawn</a>') && pages[0].html.includes('href="report-craft-plus.html">Craft Plus</a>'));
+  assert.ok(!pages[0].html.includes('Change the results of this theme'), 'only the theme reports have it');
+});

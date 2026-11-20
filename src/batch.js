@@ -67,7 +67,8 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
   const blocked = (passes) => passes.find((p) => p.blocked);
   try {
     // ---- Tab 1: Vertical first
-    step('setup', 'Tab 1: setting the Vertical layout');
+    // not counted in the Time column: the clock starts when the theme editor is opened (status 'setup' below)
+    step('preparing', 'Tab 1: setting the Vertical layout');
     await design.setLayout(designPage, 'vertical');
     // ---- Tab 2: editor
     await sleep(delays.beforeEdit);
@@ -144,11 +145,18 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   prog.setThemes(themeList);
   const log = (m) => { console.log(`[${T.fmtTime(new Date())}] ${String(m).replace(/^\n/, '')}`); prog.event(String(m).trim()); };
   let outcome = 'completed';
-  const onSig = () => { prog.event('Stopped by the user'); prog.finish('cancelled'); process.exit(130); };
+  let ctxRef = null, browserRef = null;
+  const onSig = () => { // close Chrome properly first, so it does not report a crash and ask to restore its tabs next time
+    prog.event('Stopped by the user'); prog.finish('cancelled');
+    const bye = () => process.exit(130);
+    setTimeout(bye, 6000).unref();
+    Promise.all([browserRef && browserRef.close().catch(() => {}), ctxRef && ctxRef.close().catch(() => {})]).then(bye, bye);
+  };
   process.on('SIGINT', onSig);
   process.on('SIGTERM', onSig);
   const ctx = await openAdmin(profileDirFor(root, envKey), opts.show ? 'show' : opts.headless ? 'headless' : 'quiet');
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  ctxRef = ctx; browserRef = browser;
   let designPage = null;
   const dbg = path.join(runDir, '_debug');
   const keepNames = env.keepThemes || env.pivots || []; // never deleted, even as drafts (Horizon: the store's base theme)
@@ -260,6 +268,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   } finally {
     await browser.close().catch(() => {});
     await ctx.close().catch(() => {});
+    require('./lib/browser').markCleanExit(profileDirFor(root, envKey));
     saveRun(runDir, run, checklist, prev);
     process.removeListener('SIGINT', onSig);
     process.removeListener('SIGTERM', onSig);

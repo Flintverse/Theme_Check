@@ -106,3 +106,23 @@ test('one theme at a time: install, wait until usable, test, delete, next (the o
     assert.strictEqual(installed.length, 1, 'only the live theme is left');
   } finally { Module._load = real; delete require.cache[require.resolve('../src/batch')]; }
 });
+
+test('a stopped or killed Chrome does not ask to restore its tabs next time', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { markCleanExit } = require('../src/lib/browser');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-prof-'));
+  fs.mkdirSync(path.join(d, 'Default', 'Sessions'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'Default', 'Sessions', 'Session_1'), 'x');
+  fs.writeFileSync(path.join(d, 'Default', 'Preferences'), JSON.stringify({ profile: { exit_type: 'Crashed', exited_cleanly: false, name: 'keep' }, session: { restore_on_startup: 1 }, other: 1 }));
+  markCleanExit(d);
+  const j = JSON.parse(fs.readFileSync(path.join(d, 'Default', 'Preferences'), 'utf8'));
+  assert.strictEqual(j.profile.exit_type, 'Normal');
+  assert.strictEqual(j.profile.exited_cleanly, true);
+  assert.strictEqual(j.profile.name, 'keep', 'the rest of the profile is untouched');
+  assert.strictEqual(j.session.restore_on_startup, 5);
+  assert.strictEqual(j.other, 1);
+  assert.strictEqual(fs.existsSync(path.join(d, 'Default', 'Sessions')), false, 'the saved tabs of the last session are gone');
+  markCleanExit(path.join(d, 'nothing-here')); // a profile that does not exist yet is fine
+});

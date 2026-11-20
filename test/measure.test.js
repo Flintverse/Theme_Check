@@ -146,3 +146,62 @@ test('the layout is read from Findter\'s own class, also when the horizontal bar
   assert.strictEqual(await detectLayout(page), 'offcanvas');
   await page.close();
 });
+
+test('V-09 / M-04 measure the option buttons only, never a caption line such as "Title: Sample Selling Plans"', async () => {
+  const card = (caption) => `<div class="search-filters__product-item" data-tc-card="1" style="width:300px;position:relative"><div class="variant-picker">
+    <span class="option-label" style="display:block;text-align:left">Size: 10</span>
+    <label class="option-value" style="display:inline-block;width:60px;height:32px;border:1px solid #000;border-radius:16px;text-align:center;line-height:32px">10</label>
+    <label class="option-value" style="display:inline-block;width:60px;height:32px;border:1px solid #000;border-radius:16px;text-align:center;line-height:32px">12</label>
+    ${caption}
+    <button style="display:block;width:280px;height:36px;border:1px solid #000">Add to cart</button></div></div>`;
+  // a wide caption line with no border and no background, aligned left: it is text, not a button
+  const withCaption = await run(wrap(card('<label class="option-title" style="display:block;width:260px">Title: Sample Selling Plans</label>')), 'V-09');
+  assert.strictEqual(withCaption.status, 'pass', withCaption.detail);
+  const mobile = await run(wrap(card('<label class="variant-title" style="display:block;width:260px">Title: Sample Selling Plans</label>')), 'M-04');
+  assert.strictEqual(mobile.status, 'pass', mobile.detail);
+  // a real pill with its text pushed to the left is still caught
+  const bad = await run(wrap(card('<label class="option-value" style="display:block;width:200px;height:36px;border:1px solid #000;text-align:left;line-height:36px">XL</label>')), 'V-09');
+  assert.strictEqual(bad.status, 'fail');
+  assert.match(bad.detail, /option "XL".*off-centre sideways/);
+});
+
+test('V-12 measures every Findter icon: normal ones pass, an enlarged or empty one fails', async () => {
+  const icon = (w, h, shape) => `<svg width="${w}" height="${h}" viewBox="0 0 20 20" style="display:inline-block">${shape === 'empty' ? '' : '<path d="M2 2h16v16H2z" fill="#000"/>'}</svg>`;
+  const good = await run(wrap(icon(16, 16) + icon(20, 20) + icon(12, 12)), 'V-12');
+  assert.strictEqual(good.status, 'pass', good.detail);
+  assert.match(good.detail, /3 Findter icon\(s\) measured/);
+  const big = await run(wrap(icon(16, 16) + icon(120, 120)), 'V-12');
+  assert.strictEqual(big.status, 'fail');
+  assert.match(big.detail, /enlarged \(120x120px/);
+  const empty = await run(wrap(icon(16, 16, 'empty')), 'V-12');
+  assert.strictEqual(empty.status, 'fail');
+  assert.match(empty.detail, /empty/);
+  assert.strictEqual((await run('<p>no icons</p>', 'V-12')).status, 'na');
+});
+
+test('suggestion: the panel on screen counts, not the size-less tag; a widget in a hidden copy of the form is named as such', async () => {
+  const mobileLike = `<form style="display:block"><fdt-search-suggestion-widget><fdt-search-suggestion><fdt-search-suggestion-overview style="display:block;position:absolute;left:0;top:0;width:390px;height:600px"><button class="search-filters__search-suggestion-close-button" style="width:33px;height:25px"><svg width="20" height="20"><path d="M0 0h20v20z"/></svg></button><div>Products</div><fdt-watermark style="display:block"><span>Powered by Findter</span></fdt-watermark></fdt-search-suggestion-overview></fdt-search-suggestion></fdt-search-suggestion-widget></form>`;
+  let page = await browser.newPage({ viewport: { width: 400, height: 800 } });
+  await page.setContent(`<body>${mobileLike}`);
+  let m = await page.evaluate(measureSuggestion, { opts: {} });
+  await page.close();
+  assert.strictEqual(m.widget, true, 'the panel is on screen although the widget tag itself has no size');
+  assert.strictEqual(m.watermark, true);
+  assert.strictEqual(m.backArrow, true);
+  // desktop Dawn: Findter's widget sits in a copy of the search form that is not shown
+  page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+  await page.setContent(`<body><form style="display:none"><fdt-search-suggestion-widget><fdt-search-suggestion><fdt-search-suggestion-overview style="position:absolute"><div>Products</div><fdt-watermark>Powered by Findter</fdt-watermark></fdt-search-suggestion-overview></fdt-search-suggestion></fdt-search-suggestion-widget></form><form><input type="search" style="width:500px"><div class="predictive-search" style="height:120px"><a href="/products/x" style="display:block;height:30px">Theme product</a></div></form>`);
+  m = await page.evaluate(measureSuggestion, { opts: {} });
+  await page.close();
+  assert.strictEqual(m.widget, false);
+  assert.strictEqual(m.hiddenCopy, true);
+  assert.ok(m.themeBoxes >= 1);
+});
+
+test("the search bars counted after the back arrow are the shopper's, not the collection filter boxes", async () => {
+  const page = await browser.newPage({ viewport: { width: 400, height: 800 } });
+  await page.setContent(`<body><input type="search" style="width:300px"><div id="fdt-container"><input type="text" placeholder="Search in this collection"><input type="text" placeholder="Search filter value"></div>`);
+  const m = await page.evaluate(measureSuggestion, { opts: {} });
+  await page.close();
+  assert.strictEqual(m.searchInputs, 1);
+});

@@ -139,6 +139,20 @@ async function doMail(cfg, runId, dry) {
     return;
   }
 
+  if (cmd === 'delete-run') { // node src/cli.js delete-run --run <id>[,<id>] | --today   (here and on Cloudflare)
+    const { deleteRuns } = require('./store/delete');
+    const dir = runsDir(ROOT, cfg);
+    let ids = args.run ? String(args.run).split(',').map((x) => x.trim()).filter(Boolean) : [];
+    if (args.today) { const day = require('./lib/time').today(); ids = ids.concat(fs.existsSync(dir) ? fs.readdirSync(dir).filter((d) => d.startsWith(day + '-')) : []); }
+    if (!ids.length) throw new Error('Say which run: --run <id>[,<id>] or --today');
+    const r = deleteRuns({ root: ROOT, cfg, runIds: ids, checklist: loadChecklist() });
+    console.log('Removed here: ' + (r.removed.join(', ') || '(nothing)') + (r.missing.length ? ' | not found here: ' + r.missing.join(', ') : '') + (r.progressCleared ? ' | the live progress of that run was cleared' : ''));
+    const rr = await require('./monitor').removeRunsRemote(ROOT, cfg, ids, { clearProgress: r.progressCleared });
+    console.log(rr.message);
+    process.exitCode = rr.ok ? 0 : 1;
+    return;
+  }
+
   if (cmd === 'watch') { await require('./monitor').watch(ROOT, cfg); return; }
 
   if (cmd === 'sync') {

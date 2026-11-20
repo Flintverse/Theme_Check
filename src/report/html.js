@@ -54,6 +54,7 @@ figcaption{font:12px ui-monospace,monospace;color:var(--muted)}
 .note ul{margin:6px 0 0;padding-left:18px}
 .tcnav{position:sticky;top:0;z-index:40;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);font:600 14px system-ui}
 .tcnav a{color:var(--accent);text-decoration:none;padding:4px 8px;border-radius:8px}.tcnav a:hover{background:var(--na-bg)}
+.tcnav .chg-link{background:var(--accent);color:#fff}
 .tcnav .back{border:1px solid var(--line);color:var(--ink)}
 .tcnav .here{margin-left:auto;font:12px ui-monospace,monospace;color:var(--muted)}
 .man{font:700 10px ui-monospace,monospace;padding:2px 6px;border-radius:4px;margin-left:6px;background:var(--accent);color:#fff;white-space:nowrap}
@@ -64,7 +65,7 @@ figcaption{font:12px ui-monospace,monospace;color:var(--muted)}
 .lb .bg{position:absolute;inset:0}
 `;
 // Links to every page of the tool (this page may not run scripts, so these are plain links; the dashboard is two folders up).
-const NAV = (run, only) => `<nav class="tcnav" aria-label="The tool"><a class="back" href="../../#runs">&larr; Back to the dashboard</a>${only ? '<a href="report.html">Full report (all themes)</a>' : ''}<a href="../../#live">Live</a><a href="../../#overview">Overview</a><a href="../../#issues">Issue tracker</a><a href="../../#runs">Runs</a><a href="../../#themes">Themes</a><a href="../../#schedule">Schedule</a><span class="here">${only ? esc(only) + ' &middot; ' : ''}Report ${esc(run.runId)}</span></nav>`;
+const NAV = (run, only) => `<nav class="tcnav" aria-label="The tool"><a class="back" href="../../#runs">&larr; Back to the dashboard</a>${only ? '<a href="report.html">Full report (all themes)</a><a class="chg-link" href="../../#runs/' + encodeURIComponent(run.runId) + '/' + encodeURIComponent(only) + '">Change the results of this theme (dashboard)</a>' : ''}<a href="../../#live">Live</a><a href="../../#overview">Overview</a><a href="../../#issues">Issue tracker</a><a href="../../#runs">Runs</a><a href="../../#themes">Themes</a><a href="../../#schedule">Schedule</a><span class="here">${only ? esc(only) + ' &middot; ' : ''}Report ${esc(run.runId)}</span></nav>`;
 let lbCount = 0; // each picture gets its own pop-up (a pure CSS one: this page may not run scripts)
 
 const pill = (s) => `<span class="pill p-${esc(s)}">${esc(String(s).toUpperCase())}</span>`;
@@ -102,7 +103,7 @@ function render(run, checklist, prevRun, opts) {
       if (rs.every((r) => r.status === 'na')) return '<td class="c m-na">n/a</td>';
       return '<td class="c m-pass">ok</td>';
     }).join('');
-    return `<tr><td>${esc(th)}</td>${cells}</tr>`;
+    return `<tr><td><a href="${themeReportFile(th)}">${esc(th)}</a></td>${cells}</tr>`;
   }).join('');
   const matrix = `<div class="scroll"><table>${head}${body}</table></div><div class="refs">* = new since the previous run.</div>`;
 
@@ -118,7 +119,7 @@ function render(run, checklist, prevRun, opts) {
       }).join('');
       const ev = shots ? `<div class="shots">${shots}</div>` : '';
       const man = r.manual ? `<span class="man" title="Set by hand. The script said: ${esc(r.autoStatus)}">MANUAL ${esc(String(r.manual).toUpperCase())} (script: ${esc(r.autoStatus)})</span>` : '';
-      return `<tr><td>${esc(r.theme)}</td><td>${esc(r.layout)}</td><td>${pill(r.status)}${chg(r.change)}${man}</td><td>${esc(r.detail)}${ev}</td></tr>`;
+      return `<tr><td><a href="${themeReportFile(r.theme)}">${esc(r.theme)}</a></td><td>${esc(r.layout)}</td><td>${pill(r.status)}${chg(r.change)}${man}</td><td>${esc(r.detail)}${ev}</td></tr>`;
     }).join('');
     return `<section class="card r-${status}" id="${esc(id)}"><div class="h"><span class="cid">${esc(id)}</span>${pill(status)}<span class="refs">${esc(m.area || '')} | ${esc(m.severity)} | ${esc(m.mode || '')}</span></div><h3>${esc(m.title)}</h3>
 <dl class="cols"><div><dt>Steps</dt><dd>${esc(m.steps)}</dd></div><div><dt>Expected</dt><dd>${esc(m.expected)}</dd></div></dl>

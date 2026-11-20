@@ -105,4 +105,21 @@ async function watch(root, cfg, opts) {
   await new Promise((resolve) => { const t = setInterval(tick, (opts && opts.everyMs) || 15000); process.on('SIGINT', () => { clearInterval(t); resolve(); }); });
 }
 
-module.exports = { forRun, syncNow, watch, pushFreshReport };
+// After runs were removed on this machine: remove them on Cloudflare too (every file under runs/<id>/), forget the live
+// progress when it was about one of them, and send the recalculated dashboard data.
+async function removeRunsRemote(root, cfg, ids, opts) {
+  const s = sync.syncConfig(cfg);
+  if (!s) return { ok: false, message: 'No "cloudflare" section in config/config.local.json: nothing removed there.' };
+  if (s.error) return { ok: false, message: s.error };
+  const o = Object.assign({ fetchImpl: null, clearProgress: false }, opts);
+  const lines = [];
+  for (const id of ids) {
+    try { await sync.send(s, 'DELETE', `run/${encodeURIComponent(id)}`, undefined, null, o.fetchImpl); lines.push(id + ': removed on Cloudflare'); }
+    catch (e) { lines.push(id + ': FAILED on Cloudflare (' + e.message + ')'); }
+  }
+  if (o.clearProgress) await sync.send(s, 'DELETE', 'progress', undefined, null, o.fetchImpl).catch(() => {});
+  await sync.pushState(s, remoteState(root, cfg), o.fetchImpl).catch((e) => lines.push('dashboard data not sent: ' + e.message));
+  return { ok: !lines.some((l) => /FAILED|not sent/.test(l)), message: lines.join('\n') };
+}
+
+module.exports = { forRun, syncNow, watch, pushFreshReport, removeRunsRemote };

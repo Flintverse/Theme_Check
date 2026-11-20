@@ -47,7 +47,8 @@ class Progress {
 
   theme(name) { return this.s.themes.find((t) => t.name === name); }
 
-  // status: queued | installing | setup | testing | done | failed
+  // status: queued | installing | installed | preparing | setup | testing | done | failed
+  // The Time column counts only 'setup' and 'testing': from the moment the theme editor is opened, never the installing / waiting.
   setTheme(name, patch) {
     const t = this.theme(name);
     if (!t) return;

@@ -285,6 +285,7 @@ test('theme time counts only the time it is set up or tested, not waiting for it
   p.setThemes([{ name: 'A', batch: 1 }, { name: 'B', batch: 1 }]);
   p.setTheme('A', { status: 'installing', step: 'x' });
   p.setTheme('A', { status: 'installed', step: 'waiting' });
+  p.setTheme('A', { status: 'preparing', step: 'Tab 1: setting the Vertical layout' }); // before the editor opens: not counted either
   await new Promise((r) => setTimeout(r, 150)); // waiting: must not count
   assert.strictEqual(p.theme('A').activeMs, 0);
   assert.strictEqual(p.theme('A').activeSince, null);

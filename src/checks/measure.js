@@ -212,6 +212,27 @@ function measure(arg) {
       return probs.length ? R('fail', probs.join('; ')) : R('pass');
     }
 
+    case 'V-12': {
+      // every Findter icon on screen: the dropdown arrows, the magnifier, the X, the scroll arrow...
+      const icons = q('#fdt-container svg, fdt-scroll-to-top svg, fdt-search-suggestion-widget svg, svg.fdt-icon').filter((e) => e.tagName.toLowerCase() === 'svg' && vis(e));
+      const uniq = Array.from(new Set(icons));
+      if (!uniq.length) return R('na', 'No Findter icon is on screen to measure.');
+      const probs = [];
+      let min = 1e9, max = 0;
+      uniq.forEach((svg, i) => {
+        const r = rect(svg);
+        min = Math.min(min, Math.min(r.width, r.height)); max = Math.max(max, Math.max(r.width, r.height));
+        const name = (svg.getAttribute('aria-label') || (svg.closest('button, a') && (svg.closest('button, a').getAttribute('aria-label') || '')) || 'icon ' + (i + 1)).slice(0, 24);
+        if (Math.max(r.width, r.height) > 40) probs.push('"' + name + '" is enlarged (' + Math.round(r.width) + 'x' + Math.round(r.height) + 'px, it should be 6 to 40px)');
+        else if (Math.min(r.width, r.height) < 6) probs.push('"' + name + '" is almost invisible (' + Math.round(r.width) + 'x' + Math.round(r.height) + 'px)');
+        else if (Math.max(r.width, r.height) / Math.min(r.width, r.height) > 3) probs.push('"' + name + '" is stretched (' + Math.round(r.width) + 'x' + Math.round(r.height) + 'px)');
+        if (!svg.querySelector('path, circle, line, polyline, polygon, rect, ellipse, use')) probs.push('"' + name + '" is empty (the icon has no shape)');
+        const cs = getComputedStyle(svg);
+        if (cs.fill === 'none' && cs.stroke === 'none' && !svg.querySelector('[fill]:not([fill=none]), [stroke]:not([stroke=none])')) probs.push('"' + name + '" has no fill and no line, so it cannot be seen');
+      });
+      return probs.length ? R('fail', Array.from(new Set(probs)).slice(0, 4).join('; ')) : R('pass', uniq.length + ' Findter icon(s) measured: all between ' + Math.round(min) + ' and ' + Math.round(max) + 'px, none stretched or empty.');
+    }
+
     case 'V-09':
     case 'M-04': {
       // the caller clicked "Choose options" on a card and marked the card
@@ -221,7 +242,20 @@ function measure(arg) {
       const probs = [];
       const btns = q('button, a.button, [role=button]', card).filter(vis);
       btns.forEach((b) => { const r = rect(b); if (r.right > cr.right + 2 || r.left < cr.left - 2) probs.push(`"${(b.innerText || '').trim().slice(0, 18)}" button spills ${Math.round(Math.max(r.right - cr.right, cr.left - r.left))}px outside the card`); });
-      const opts = q('[class*="variant" i] label, [class*="option" i] label, [class*="swatch" i], [class*="option-value" i]', card).filter((e) => vis(e) && (e.innerText || '').trim());
+      // A real option is a button the shopper presses: a pill or a swatch, which has its own border or background.
+      // A caption line such as "Size: 10" or "Title: Sample Selling Plans" has neither, and is not measured.
+      const boxed = (e) => {
+        const cs = getComputedStyle(e);
+        const bw = ['Top', 'Right', 'Bottom', 'Left'].reduce((m, side) => Math.max(m, parseFloat(cs['border' + side + 'Width']) || 0), 0);
+        const bg = cs.backgroundColor;
+        const hasBg = !!bg && bg !== 'transparent' && !/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)/.test(bg);
+        return (bw >= 1 && cs.borderStyle !== 'none') || hasBg || cs.backgroundImage !== 'none';
+      };
+      const action = /add to cart|view full|view details?|quick|close|choose options/i;
+      let cand = q('[class*="variant" i] label, [class*="option" i] label, [class*="variant" i] button, [class*="option" i] button, [class*="swatch" i], [class*="option-value" i], [role=radio]', card)
+        .filter((e) => vis(e) && (e.innerText || '').trim() && (e.innerText || '').trim().length <= 30 && !action.test((e.innerText || '').trim()) && rect(e).width <= 220 && rect(e).height <= 90 && boxed(e));
+      cand = cand.filter((e) => !cand.some((o) => o !== e && e.contains(o))); // the inner-most box only
+      const opts = cand;
       opts.slice(0, 12).forEach((o) => {
         // where does the text really sit in its box? (the computed text-align is "left"/"start" almost everywhere by default)
         const rg = document.createRange();
@@ -354,13 +388,17 @@ function measureSuggestion(arg) {
   const q = (s, r) => Array.from((r || document).querySelectorAll(s));
   const rect = (e) => e.getBoundingClientRect();
   const vis = (e) => { if (!e) return false; const r = rect(e); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0; };
-  const widget = q('fdt-search-suggestion-widget').find(vis);
+  // The <fdt-search-suggestion-widget> tag itself has no size of its own: what the shopper sees is its panel inside.
+  const widgetTag = q('fdt-search-suggestion-widget')[0] || null;
+  const widget = q('fdt-search-suggestion-overview').find(vis) || q('fdt-search-suggestion-widget').find((w) => vis(w) || q('*', w).some((c) => vis(c) && rect(c).height > 20 && rect(c).width > 60)) || null;
+  const hiddenCopy = !!widgetTag && !widget && !!widgetTag.closest('form') && !vis(widgetTag.closest('form'));
   const themeBoxes = q('[class*="predictive" i], [class*="suggestion" i], [id*="predictive" i], [id*="suggestion" i], [class*="search-results" i]').filter((e) => vis(e) && !e.closest('fdt-search-suggestion-widget') && !e.querySelector('fdt-search-suggestion-widget') && rect(e).height > 60 && q('a[href*="/products/"]', e).some(vis));
   const themeInput = q('input[type=search], input[name=q]').find((e) => vis(e) && !e.closest('fdt-search-suggestion-widget') && !e.closest('#fdt-container'));
   const embedLoaded = !!document.querySelector('fdt-search-suggestion-widget, script[src*="fdt-search-suggestion"], link[href*="fdt-search-suggestion"], script[src*="fdt-suggestion"]');
-  const out = { embedLoaded: embedLoaded, widget: !!widget, watermark: false, themeBoxes: themeBoxes.length, themeInput: !!themeInput, themeInputValue: themeInput ? themeInput.value : '', widgetWidth: 0, inputWidth: 0, gap: null, covered: false, backArrow: false, searchInputs: 0 };
+  const out = { embedLoaded: embedLoaded, widgetInPage: !!widgetTag, hiddenCopy: hiddenCopy, widget: !!widget, watermark: false, themeBoxes: themeBoxes.length, themeInput: !!themeInput, themeInputValue: themeInput ? themeInput.value : '', widgetWidth: 0, inputWidth: 0, gap: null, covered: false, backArrow: false, searchInputs: 0 };
   if (widget) {
-    out.watermark = /powered by\s*findter/i.test(widget.innerText || '') || !!q('[class*="watermark" i], [class*="powered" i]', widget).find(vis);
+    const scope = widget.closest('fdt-search-suggestion') || widget;
+    out.watermark = /powered by\s*findter/i.test(widget.innerText || '') || q('fdt-watermark, [class*="watermark" i], [class*="powered" i]', scope).some((e) => vis(e) && /powered by\s*findter/i.test(e.innerText || ''));
     const wr = rect(widget);
     out.widgetWidth = Math.round(wr.width);
     const cx = Math.round((wr.left + wr.right) / 2), cyy = Math.round(wr.top + Math.min(40, wr.height / 2));
@@ -373,9 +411,11 @@ function measureSuggestion(arg) {
       out.widthDiffPct = Math.round(Math.abs(wr.width - ir.width) / ir.width * 100);
       out.shiftPx = Math.round(Math.abs((wr.left + wr.right) / 2 - (ir.left + ir.right) / 2));
     }
-    out.backArrow = q('button, a, [role=button], svg', widget.closest('[class*="search" i]') || document).some((e) => vis(e) && /back|arrow|prev|close/i.test((e.getAttribute('aria-label') || '') + String(e.className)));
+    // Findter's back arrow is the close button of its panel, drawn as an arrow, on the left of the search bar
+    out.backArrow = q('.search-filters__search-suggestion-close-button, [class*="suggestion" i][class*="close" i], [class*="suggestion" i][class*="back" i]', widget.closest('form') || widget.parentElement || document).some((e) => vis(e) && !!e.querySelector('svg'));
   }
-  out.searchInputs = q('input[type=search], input[name=q], input[placeholder*="search" i]').filter(vis).length;
+  // search bars the shopper can see on screen: not the filter boxes of the collection ("Search in this collection", "Search filter value")
+  out.searchInputs = q('input[type=search], input[name=q], input[placeholder*="search" i]').filter((e) => vis(e) && !e.closest('#fdt-container') && rect(e).bottom > 0 && rect(e).top < window.innerHeight).length;
   return out;
 }
 

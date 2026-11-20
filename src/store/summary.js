@@ -21,6 +21,7 @@ function buildSummary(run, checklist, prevRun) {
     date: require('../lib/time').fmtDate(run.startedAt), // the day in UTC+7
     startedAt: run.startedAt,
     comparedWith: prevRun ? prevRun.runId : null,
+    themeNames: (run.themes || []).map((t) => t.name),
     themesTotal: (run.themes || []).length,
     themesTested: tested.length,
     themesWithIssues: themesWithIssues.size,

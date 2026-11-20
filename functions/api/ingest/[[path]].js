@@ -7,6 +7,8 @@
 //   POST /api/ingest/config               the test machine saved a change itself (so the web page shows it)
 //   POST /api/ingest/config-status        what the test machine did with a saved configuration
 //   PUT  /api/ingest/media/<run>/<file>   a report, summary or picture of one run (no videos)
+//   DELETE /api/ingest/run/<run>          remove one run: every file stored under runs/<run>/
+//   DELETE /api/ingest/progress           forget the live progress (the Live page then shows "No run yet")
 import { json, isAuthorized, cleanKey, typeFor, validateConfig } from '../../../cf/lib.js';
 
 const LIMITS = { progress: 1e6, state: 20e6, media: 15e6, config: 2e6, 'config-status': 1e5 };
@@ -21,6 +23,23 @@ async function handle({ request, env, params }) {
   if (kind === 'config' && request.method === 'GET') {
     const obj = await env.STORE.get('data/config.json');
     return obj ? new Response(obj.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : json({ rev: 0 });
+  }
+
+  if (request.method === 'DELETE') {
+    if (kind === 'progress') { await env.STORE.delete('data/progress.json'); return json({ ok: true }); }
+    if (kind === 'run') {
+      const id = String(parts[1] || '');
+      if (!/^[\w.-]{1,80}$/.test(id)) return json({ error: 'bad run id' }, 400);
+      let cursor, removed = 0;
+      do { // R2 lists at most 1000 objects at a time
+        const page = await env.STORE.list({ prefix: `runs/${id}/`, cursor });
+        const keys = (page.objects || []).map((o) => o.key);
+        if (keys.length) { await env.STORE.delete(keys); removed += keys.length; }
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor);
+      return json({ ok: true, removed });
+    }
+    return json({ error: 'not found' }, 404);
   }
 
   if (kind === 'overrides' && request.method === 'GET') { // the manual verdicts of one run, saved from the web page
@@ -60,3 +79,4 @@ async function handle({ request, env, params }) {
 export const onRequestGet = handle;
 export const onRequestPost = handle;
 export const onRequestPut = handle;
+export const onRequestDelete = handle;

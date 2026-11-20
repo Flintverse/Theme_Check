@@ -68,7 +68,7 @@ svg.chart{width:100%;height:150px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.pulse{animation:none}}
 .pbar{height:14px;background:var(--na-bg);border-radius:8px;overflow:hidden}.pbar i{display:block;height:100%;background:var(--accent);transition:width .6s}
-.st-queued{background:var(--na-bg);color:var(--na)}.st-installing,.st-installed,.st-setup{background:var(--warn-bg);color:var(--warn)}.st-testing{background:var(--accent);color:var(--accent-ink)}.st-done{background:var(--pass-bg);color:var(--pass)}.st-failed{background:var(--fail-bg);color:var(--fail)}
+.st-queued{background:var(--na-bg);color:var(--na)}.st-installing,.st-installed,.st-preparing,.st-setup{background:var(--warn-bg);color:var(--warn)}.st-testing{background:var(--accent);color:var(--accent-ink)}.st-done{background:var(--pass-bg);color:var(--pass)}.st-failed{background:var(--fail-bg);color:var(--fail)}
 .linkbtn{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline}
 #detail{position:fixed;left:0;right:0;bottom:0;top:var(--hh,100px);display:none;z-index:15;background:rgba(0,0,0,.45)}#detail.on{display:flex;justify-content:flex-end}
 #detail .panel{background:var(--bg);width:min(1040px,100%);height:100%;overflow-y:auto;overflow-x:hidden;padding:16px 16px 48px;display:flex;flex-direction:column;gap:16px;box-shadow:-8px 0 24px rgba(0,0,0,.25);overscroll-behavior:contain}
@@ -280,7 +280,8 @@ a.brand{color:inherit;text-decoration:none}
         var w = r.worstThemes && r.worstThemes[0];
         return '<tr><td>' + esc(r.date) + '<div class="small muted">' + esc(r.runId) + '</div></td><td>' + esc(r.env) + '</td><td>' + r.themesTested + '/' + r.themesTotal + '</td><td>' + r.themesWithIssues + '</td><td>' + r.failedChecks + '</td><td>' + r.newCount + '</td><td>' + r.fixedCount + '</td>' +
           '<td>' + (w ? esc(w.theme) + ' (' + w.fails + ')' : '-') + '</td>' +
-          '<td>' + reportLink(r.runId, 'report') + (S.mediaLocal !== false ? ' · <a href="runs/' + encodeURIComponent(r.runId) + '/summary.json">summary</a>' : '') + '</td></tr>';
+          '<td>' + reportLink(r.runId, 'full report') + (S.mediaLocal !== false ? ' · <a href="runs/' + encodeURIComponent(r.runId) + '/summary.json">summary</a>' : '') +
+          (r.themeNames && r.themeNames.length ? '<details style="margin-top:6px"><summary class="small">' + r.themeNames.length + ' theme(s): open one to check or change its results</summary><div class="small" style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px">' + r.themeNames.map(function (n) { return '<button class="linkbtn" data-theme="' + esc(n) + '" data-run="' + esc(r.runId) + '">' + esc(n) + '</button>'; }).join('') + '</div></details>' : '') + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
 
@@ -348,11 +349,11 @@ a.brand{color:inherit;text-decoration:none}
   function canMark() { return !!S && (S.readOnly ? CAN : true); }
   function bucket(s) { return s === 'error' ? 'fail' : s; }
   function verdictKey(name, p, x) { return [name, p.layout, p.viewport, x.id].join('|'); }
-  function fetchOverrides(force) {
-    if (!P || !P.runId || (S && S.mediaLocal === false)) return Promise.resolve();
-    if (!force && OV.run === P.runId && Date.now() - ovT < 12000) return Promise.resolve();
+  function fetchOverrides(force, runArg) {
+    var run = runArg || (P && P.runId);
+    if (!run || (S && S.mediaLocal === false)) return Promise.resolve();
+    if (!force && OV.run === run && Date.now() - ovT < 12000) return Promise.resolve();
     ovT = Date.now();
-    var run = P.runId;
     return fetch(mediaUrl(run, 'overrides.json'), { cache: 'no-store', credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : { rev: 0, items: {} }; })
       .then(function (j) {
@@ -417,12 +418,17 @@ a.brand{color:inherit;text-decoration:none}
   var CHK_ORDER = { fail: 0, review: 1, pass: 2, skip: 3, na: 4 };
   /* ---- Where you are: #<tab> or #live/<theme>. Every page has a way back and a way to any other page. ---- */
   var IDX = 0, PENDING = false; // IDX = position in this page's own history (0 = nothing to go back to), PENDING = the next drawer was opened by a click
-  function parseHash() { var p = location.hash.slice(1).split('/'); var th = ''; try { th = p[1] ? decodeURIComponent(p.slice(1).join('/')) : ''; } catch (e) { th = ''; } return { tab: p[0], theme: th }; }
+  function parseHash() {
+    var p = location.hash.slice(1).split('/');
+    var dec = function (x) { try { return x ? decodeURIComponent(x) : ''; } catch (e) { return ''; } };
+    if (p[0] === 'runs') return { tab: 'runs', run: dec(p[1]), theme: dec(p.slice(2).join('/')) };
+    return { tab: p[0], run: '', theme: dec(p.slice(1).join('/')) };
+  }
   function tabLabel(id) { var t = TABS.filter(function (x) { return x[0] === id; })[0]; return t ? t[1] : id; }
   function crumbs() {
     var c = $('crumbs'); if (!c) return;
     var h = '<a href="#overview">Theme check</a> &rsaquo; ';
-    h += DET.name ? '<a href="#' + TAB + '">' + esc(tabLabel(TAB)) + '</a> &rsaquo; <b>' + esc(DET.name) + '</b>' : '<b>' + esc(tabLabel(TAB)) + '</b>';
+    h += DET.name ? (DET.live ? '<a href="#live">Live</a>' : '<a href="#runs">Runs</a> &rsaquo; <span>' + esc(DET.run) + '</span>') + ' &rsaquo; <b>' + esc(DET.name) + '</b>' : '<b>' + esc(tabLabel(TAB)) + '</b>';
     c.innerHTML = h;
     var b = $('back'); if (b) b.disabled = IDX === 0;
     var hd = document.querySelector('header'); if (hd) document.documentElement.style.setProperty('--hh', hd.offsetHeight + 'px');
@@ -431,16 +437,22 @@ a.brand{color:inherit;text-decoration:none}
     var r = parseHash();
     var tab = TABS.some(function (t) { return t[0] === r.tab; }) ? r.tab : TAB;
     if (tab !== TAB) { TAB = tab; render(); }
-    if (tab === 'live' && r.theme) { if (DET.name !== r.theme) { var pushed = DET.name ? DET.pushed : PENDING; PENDING = false; showTheme(r.theme, pushed); } }
+    var want = (tab === 'live' && r.theme) ? { run: P && P.runId, live: true, theme: r.theme } : ((tab === 'runs' && r.run && r.theme) ? { run: r.run, live: false, theme: r.theme } : null);
+    if (want) { if (DET.name !== want.theme || DET.run !== want.run) { var pushed = DET.name ? DET.pushed : PENDING; PENDING = false; showTheme(want.theme, pushed, want.run, want.live); } }
     else if (DET.name) hideTheme();
     if (S) nav(); else crumbs();
   }
-  function openTheme(name) { PENDING = true; location.hash = '#live/' + encodeURIComponent(name); }
-  function closeTheme() { if (DET.pushed) history.back(); else { history.replaceState({ i: IDX }, '', '#live'); route(); } }
-  function goTheme(name) { history.replaceState({ i: IDX }, '', '#live/' + encodeURIComponent(name)); route(); } // previous / next theme: no new history entry
-  function showTheme(name, pushed) {
+  function openTheme(name, run) { PENDING = true; location.hash = run ? '#runs/' + encodeURIComponent(run) + '/' + encodeURIComponent(name) : '#live/' + encodeURIComponent(name); }
+  function closeTheme() {
+    if (DET.pushed) { // one step back; when that step is the very same address (a link opened twice), leave it by hand
+      var n0 = DET.name, r0 = DET.run;
+      history.back();
+      setTimeout(function () { if (DET.name === n0 && DET.run === r0 && parseHash().theme) { history.replaceState({ i: IDX }, '', DET.live ? '#live' : '#runs'); route(); } }, 400);
+    } else { history.replaceState({ i: IDX }, '', DET.live ? '#live' : '#runs'); route(); } }
+  function goTheme(name) { history.replaceState({ i: IDX }, '', DET.live ? '#live/' + encodeURIComponent(name) : '#runs/' + encodeURIComponent(DET.run) + '/' + encodeURIComponent(name)); route(); } // previous / next theme: no new history entry
+  function showTheme(name, pushed, run, live) {
     clearTimeout(DET.t);
-    DET = { name: name, run: P && P.runId, data: null, err: null, msg: '', t: null, showAll: false, last: null, pushed: !!pushed };
+    DET = { name: name, run: run || (P && P.runId), live: live !== false, data: null, err: null, msg: '', t: null, showAll: false, last: null, pushed: !!pushed };
     $('detail').classList.add('on');
     drawDetail(); fetchDetail(); crumbs();
   }
@@ -451,7 +463,7 @@ a.brand{color:inherit;text-decoration:none}
     if (S && S.mediaLocal === false) { DET.err = 'The results are only on the test machine (history/runs/' + DET.run + ').'; drawDetail(); return; }
     fetch(mediaUrl(DET.run, 'results.json'), { cache: 'no-store', credentials: 'same-origin' })
       .then(function (r) { if (r.status === 404) return null; if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function (j) { if (DET.name !== name) return; DET.data = j; if (!DET.err || !/^Could not save/.test(DET.err)) DET.err = null; return fetchOverrides(true); })
+      .then(function (j) { if (DET.name !== name) return; DET.data = j; if (!DET.err || !/^Could not save/.test(DET.err)) DET.err = null; return fetchOverrides(true, DET.run); })
       .then(function () { if (DET.name === name) drawDetail(); })
       .catch(function (e) { if (DET.name !== name) return; DET.err = e.message; drawDetail(); })
       .then(function () { if (DET.name === name && P && P.running) DET.t = setTimeout(fetchDetail, 10000); });
@@ -459,16 +471,18 @@ a.brand{color:inherit;text-decoration:none}
   function drawDetail() {
     if (!DET.name) return;
     var name = DET.name;
-    var t = (P && P.themes || []).filter(function (x) { return x.name === name; })[0];
+    var liveRun = !!P && !!DET.run && DET.run === P.runId;
+    var t = liveRun ? (P.themes || []).filter(function (x) { return x.name === name; })[0] : null;
     var r = DET.data && DET.data.themes ? DET.data.themes.filter(function (x) { return x.name === name; })[0] : null;
     var info = {}; (S && S.checklist || []).forEach(function (c) { info[c.id] = c; });
     var items = OV.run === DET.run ? OV.items : {};
-    var names = (P && P.themes || []).map(function (x) { return x.name; }), at = names.indexOf(name);
-    var h = '<div class="dhead"><div class="dbtns"><button id="d-close" class="navbtn">&larr; Back to Live</button>' +
+    var names = (liveRun ? (P.themes || []) : ((DET.data && DET.data.themes) || [])).map(function (x) { return x.name; }), at = names.indexOf(name);
+    var h = '<div class="dhead"><div class="dbtns"><button id="d-close" class="navbtn">&larr; ' + (DET.live ? 'Back to Live' : 'Back to Runs') + '</button>' +
       '<button class="navbtn" data-go="' + esc(at > 0 ? names[at - 1] : '') + '"' + (at > 0 ? '' : ' disabled') + ' title="Previous theme in the list">&lsaquo; Previous theme</button>' +
       '<button class="navbtn" data-go="' + esc(at >= 0 && at < names.length - 1 ? names[at + 1] : '') + '"' + (at >= 0 && at < names.length - 1 ? '' : ' disabled') + ' title="Next theme in the list">Next theme &rsaquo;</button></div>' +
       '<h2 style="margin:10px 0 0">' + esc(name) + (t ? ' <span class="pill st-' + esc(t.status) + '">' + esc(t.status.toUpperCase()) + '</span>' : '') + '</h2>' +
       '<div class="dnav" style="margin-top:6px"><span>Go to:</span><a href="#live">Live</a><a href="#overview">Overview</a><button class="linkbtn" data-act="issues">Issue tracker (this theme)</button><a href="#runs">Runs</a><a href="#themes">Themes</a><a href="#schedule">Schedule</a></div></div>';
+    if (!DET.live) h += '<p class="muted small" style="margin:0">Run ' + esc(DET.run) + '</p>';
     if (t) h += '<p class="muted small" style="margin:0">' + esc(t.step || '') + (P.running && t.activeSince ? ' (testing now)' : '') + '</p>';
     if (DET.err) h += '<div class="note">' + esc(DET.err) + '</div>';
     if (DET.msg) h += '<div class="ok">' + esc(DET.msg) + '</div>';
@@ -674,7 +688,7 @@ a.brand{color:inherit;text-decoration:none}
   document.addEventListener('click', function (e) {
     var lb = $('lightbox');
     var tb = e.target && e.target.closest ? e.target.closest('[data-theme]') : null;
-    if (tb) { openTheme(tb.getAttribute('data-theme')); return; }
+    if (tb) { openTheme(tb.getAttribute('data-theme'), tb.getAttribute('data-run')); return; }
     var gb = e.target && e.target.closest ? e.target.closest('[data-go]') : null;
     if (gb) { if (gb.getAttribute('data-go')) goTheme(gb.getAttribute('data-go')); return; }
     var ab = e.target && e.target.closest ? e.target.closest('[data-act="issues"]') : null;

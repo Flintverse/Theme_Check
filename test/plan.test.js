@@ -86,7 +86,7 @@ test('one theme at a time: install, wait until usable, test, delete, next (the o
       const b = real.apply(this, arguments);
       return Object.assign({}, b, { openAdmin: async () => ({ close: async () => {} }), chromium: { launch: async () => ({ close: async () => {} }) } });
     }
-    if (/\/checks\/run$/.test(req)) return { runPass: async (o) => ({ layout: o.layout, viewport: o.viewportName, results: [{ id: 'V-01', layout: o.layout, status: 'pass', detail: '', shots: [] }] }), detectLayout: async () => '' };
+    if (/\/checks\/run$/.test(req)) return { waitFindter: async () => ({ ok: true, looks: 1 }), runPass: async (o) => ({ layout: o.layout, viewport: o.viewportName, results: [{ id: 'V-01', layout: o.layout, status: 'pass', detail: '', shots: [] }] }), detectLayout: async () => '' };
     return real.apply(this, arguments);
   };
   delete require.cache[require.resolve('../src/batch')];

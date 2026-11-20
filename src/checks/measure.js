@@ -16,7 +16,7 @@ function measure(arg) {
   const onScreen = (e) => { const r = rect(e); return r.right > 1 && r.left < innerWidth - 1 && r.bottom > 0 && r.top < innerHeight * 4; };
   const cy = (e) => { const r = rect(e); return (r.top + r.bottom) / 2; };
   const cx = (e) => { const r = rect(e); return (r.left + r.right) / 2; };
-  const root = document.querySelector('#fdt-container');
+  const root = (arg.scope && document.querySelector(arg.scope)) || document.querySelector('#fdt-container');
   const R = (status, detail) => ({ status, detail: detail || '' });
   const fdt = (s) => q(s, root || document).filter((e) => vis(e) && onScreen(e));
 

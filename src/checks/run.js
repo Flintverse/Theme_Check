@@ -31,9 +31,9 @@ class Pass {
     return rel;
   }
   add(id, status, detail, shots) { this.results.push({ id, layout: this.layout, status, detail: detail || '', shots: shots || [] }); }
-  async m(id, shotName, alias) {
+  async m(id, shotName, alias, scope) {
     let r;
-    try { r = await this.page.evaluate(measure, { id: alias || id, opts: this.T }); } catch (e) { r = { status: 'error', detail: String(e.message).slice(0, 160) }; }
+    try { r = await this.page.evaluate(measure, { id: alias || id, opts: this.T, scope }); } catch (e) { r = { status: 'error', detail: String(e.message).slice(0, 160) }; }
     const shots = r.status === 'na' ? [] : [await this.shot(`${id}-${r.status}`)];
     this.add(id, r.status, r.detail, shots);
     return r;
@@ -98,78 +98,148 @@ function changedRatio(a, b) {
   return diff / (A.width * A.height);
 }
 
-async function checkSelectedState(p) {
+// ---- The four kinds of filter group the checks are aimed at. Each is found by what it is (the page marks them), not by a name:
+//   price = the slider, box = the boxes (Size), checklist = the check boxes (Product category), merged = the nested group (Tag 1).
+// A group may be collapsed (the horizontal layout shows it as a dropdown): it is opened for the check and closed again.
+const KIND_LABEL = { price: 'Price slider', box: 'Box filter', checklist: 'Checklist filter', merged: 'Merged group' };
+
+async function openGroup(p, kind) {
   const { page } = p;
-  const item = page.locator('#fdt-container .fdt-option-item-count:visible').first().locator('xpath=ancestor::li[1]');
-  if (!(await item.count())) { p.add('V-10', 'na', 'No checklist value to click.'); p.add('V-11', 'na', 'No value selected.'); return; }
-  await item.scrollIntoViewIfNeeded().catch(() => {});
-  const text = ((await item.innerText().catch(() => '')) || '').trim().split('\n')[0];
-  const box = await item.boundingBox();
-  if (!box) { p.add('V-10', 'na', 'Value has no box.'); return; }
-  const clip = { x: Math.max(0, box.x), y: Math.max(0, box.y), width: Math.min(box.width, 400), height: box.height };
-  const before = await page.screenshot({ clip }).catch(() => null);
-  const s1 = await p.shot('V-10-before-click');
-  await item.locator('label, .search-filters__filter-option-item-label').first().click({ force: true, timeout: 4000 }).catch(() => item.click({ force: true }));
-  await page.waitForTimeout(2200);
-  const again = page.locator('#fdt-container li').filter({ hasText: text }).filter({ has: page.locator('input[type=checkbox]') }).first();
-  const box2 = (await again.boundingBox().catch(() => null)) || box;
-  const after = await page.screenshot({ clip: { x: Math.max(0, box2.x), y: Math.max(0, box2.y), width: Math.min(box2.width, 400), height: box2.height } }).catch(() => null);
-  const s2 = await p.shot('V-10-after-click');
-  const checked = await again.locator('input[type=checkbox]').first().isChecked().catch(() => null);
-  if (!before || !after) p.add('V-10', 'error', 'Could not take the comparison pictures.', [s1, s2]);
-  else {
-    const ratio = changedRatio(before, after);
-    if (checked === false) p.add('V-10', 'fail', `"${text}": the click did not select the value.`, [s1, s2]);
-    else if (ratio < 0.015) p.add('V-10', 'fail', `"${text}" was selected but the box looks the same as before (only ${(ratio * 100).toFixed(1)}% of its pixels changed): no dark fill or tick.`, [s1, s2]);
-    else p.add('V-10', 'pass', `"${text}" changes visibly when selected (${(ratio * 100).toFixed(0)}% of pixels changed)`, [s2]);
-  }
-  await p.m('V-11', 'chip');
-  // undo, so the next checks see the full list
-  await again.locator('label, .search-filters__filter-option-item-label').first().click({ force: true, timeout: 3000 }).catch(() => {});
-  await page.waitForTimeout(1500);
+  const found = await page.evaluate((k) => {
+    const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
+    const has = {
+      price: (g) => g.querySelector('fdt-slider'),
+      box: (g) => g.querySelector('.search-filters__filter-option-listitem--box:not(.search-filters__filter-option-listitem--box-sort)'),
+      checklist: (g) => g.querySelector('.search-filters__filter-option-listitem--checklist'),
+      merged: (g) => g.querySelector('.search-filters__filter-option-listitem--nested'),
+    }[k];
+    const g = Array.from(document.querySelectorAll('#fdt-container filter-option')).find((x) => vis(x) && has(x));
+    if (!g) return null;
+    const t = g.querySelector('.search-filters__filter-option-title');
+    g.setAttribute('data-tc-group', k);
+    if (t) t.setAttribute('data-tc-group-title', k);
+    return { title: t ? (t.innerText || '').trim() : k };
+  }, kind);
+  if (!found) return { ok: false, kind };
+  const scope = '[data-tc-group="' + kind + '"]';
+  const hasValues = () => page.evaluate((sc) => { const g = document.querySelector(sc); return !!g && Array.from(g.querySelectorAll('.fdt-option-item-count, fdt-slider, .fdt-group-value__toggle')).some((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }); }, scope);
+  let opened = false;
+  if (!(await hasValues())) { await page.locator('[data-tc-group-title="' + kind + '"]').click({ force: true, timeout: 4000 }).catch(() => {}); opened = true; await page.waitForTimeout(1200); }
+  await page.locator(scope).evaluate((e) => e.scrollIntoView({ block: 'center' })).catch(() => {});
+  await page.waitForTimeout(400);
+  return { ok: true, kind, scope, title: found.title, opened };
 }
 
+async function closeGroup(p, g) {
+  if (!g || !g.ok) return;
+  if (g.opened) { await p.page.locator('[data-tc-group-title="' + g.kind + '"]').click({ force: true, timeout: 3000 }).catch(() => {}); await p.page.waitForTimeout(500); }
+  await p.page.evaluate((k) => document.querySelectorAll('[data-tc-group="' + k + '"],[data-tc-group-title="' + k + '"]').forEach((e) => { e.removeAttribute('data-tc-group'); e.removeAttribute('data-tc-group-title'); }), g.kind).catch(() => {});
+}
+
+// One measurement, looked at on each of the given kinds of group; ONE result for the check, saying which group failed.
+async function scoped(p, id, shotName, kinds) {
+  const parts = [];
+  const shots = [];
+  for (const kind of kinds) {
+    const g = await openGroup(p, kind);
+    if (!g.ok) { parts.push({ kind, status: 'missing' }); continue; }
+    let r;
+    try { r = await p.page.evaluate(measure, { id, opts: p.T, scope: g.scope }); } catch (e) { r = { status: 'error', detail: String(e.message).slice(0, 160) }; }
+    if (r.status !== 'na') shots.push(await p.shot(shotName + '-' + kind));
+    parts.push({ kind, title: g.title, status: r.status, detail: r.detail });
+    await closeGroup(p, g);
+  }
+  const real = parts.filter((x) => x.status !== 'missing' && x.status !== 'na');
+  const bad = real.filter((x) => x.status === 'fail' || x.status === 'error');
+  let status, detail;
+  if (!real.length) { status = 'na'; detail = 'This collection has no ' + kinds.map((k) => KIND_LABEL[k].toLowerCase()).join(' / ') + ' to look at.'; }
+  else if (bad.length) { status = 'fail'; detail = bad.map((x) => x.title + ': ' + x.detail).join('; '); }
+  else { status = 'pass'; detail = 'Looked at: ' + real.map((x) => x.title).join(', ') + '.'; }
+  p.add(id, status, detail, shots);
+  return { status, detail };
+}
+
+// A value is clicked in each kind of group: does it look selected? One V-10 result; V-11 (the chip) is read once, while a value is selected.
+async function checkSelectedState(p) {
+  const { page } = p;
+  const parts = [];
+  const shots = [];
+  let chipDone = false;
+  for (const kind of ['checklist', 'box', 'merged']) {
+    const g = await openGroup(p, kind);
+    if (!g.ok) continue;
+    const sel = g.scope + ' .fdt-option-item-count:visible';
+    const item = page.locator(sel).first().locator('xpath=ancestor::li[1]');
+    if (!(await item.count())) { await closeGroup(p, g); continue; }
+    await item.scrollIntoViewIfNeeded().catch(() => {});
+    const text = ((await item.innerText().catch(() => '')) || '').trim().split('\n')[0];
+    const box = await item.boundingBox();
+    if (!box) { await closeGroup(p, g); continue; }
+    const before = await page.screenshot({ clip: { x: Math.max(0, box.x), y: Math.max(0, box.y), width: Math.min(box.width, 400), height: box.height } }).catch(() => null);
+    const s1 = await p.shot('V-10-' + kind + '-before-click');
+    await item.locator('label, .search-filters__filter-option-item-label').first().click({ force: true, timeout: 4000 }).catch(() => item.click({ force: true }));
+    await page.waitForTimeout(2200);
+    const again = page.locator(g.scope + ' li').filter({ hasText: text }).filter({ has: page.locator('input[type=checkbox]') }).first();
+    const box2 = (await again.boundingBox().catch(() => null)) || box;
+    const after = await page.screenshot({ clip: { x: Math.max(0, box2.x), y: Math.max(0, box2.y), width: Math.min(box2.width, 400), height: box2.height } }).catch(() => null);
+    const s2 = await p.shot('V-10-' + kind + '-after-click');
+    const checked = await again.locator('input[type=checkbox]').first().isChecked().catch(() => null);
+    if (!before || !after) parts.push({ title: g.title, status: 'error', detail: 'could not take the comparison pictures' }), shots.push(s1, s2);
+    else {
+      const ratio = changedRatio(before, after);
+      if (checked === false) { parts.push({ title: g.title, status: 'fail', detail: '"' + text + '": the click did not select the value.' }); shots.push(s1, s2); }
+      else if (ratio < 0.015) { parts.push({ title: g.title, status: 'fail', detail: '"' + text + '" was selected but looks the same as before (only ' + (ratio * 100).toFixed(1) + '% of its pixels changed): no dark fill or tick.' }); shots.push(s1, s2); }
+      else { parts.push({ title: g.title, status: 'pass', detail: '"' + text + '" changes visibly when selected (' + (ratio * 100).toFixed(0) + '% of pixels changed)' }); shots.push(s2); }
+    }
+    if (!chipDone) { chipDone = true; await p.m('V-11', 'chip'); }
+    // back to a clean page (a second click does not always remove a filter; the address keeps it), so the next group sees the full list
+    await closeGroup(p, g);
+    await load(page, p.baseUrl || page.url(), p.password).catch(() => {});
+    continue;
+  }
+  if (!parts.length) { p.add('V-10', 'na', 'No filter value to click on this collection.'); p.add('V-11', 'na', 'No value selected.'); return; }
+  const bad = parts.filter((x) => x.status === 'fail' || x.status === 'error');
+  p.add('V-10', bad.length ? 'fail' : 'pass', bad.length ? bad.map((x) => x.title + ': ' + x.detail).join('; ') : parts.map((x) => x.title + ': ' + x.detail).join('; '), shots);
+}
+
+// Hover on a value of the checklist (or, if there is none, of another group): is the count still readable?
 async function checkHover(p) {
   const { page } = p;
-  const item = page.locator('#fdt-container .fdt-option-item-count:visible').first().locator('xpath=ancestor::li[1]');
-  if (!(await item.count())) { p.add('V-03', 'na', 'No value with a count to hover.'); return; }
+  let g = null;
+  for (const kind of ['checklist', 'box', 'merged']) { g = await openGroup(p, kind); if (g.ok) break; }
+  if (!g || !g.ok) { p.add('V-03', 'na', 'No value with a count to hover.'); return; }
+  const item = page.locator(g.scope + ' .fdt-option-item-count:visible').first().locator('xpath=ancestor::li[1]');
+  if (!(await item.count())) { p.add('V-03', 'na', 'No value with a count to hover.'); await closeGroup(p, g); return; }
   await item.scrollIntoViewIfNeeded().catch(() => {});
   await item.hover({ force: true, timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(500);
   await item.evaluate((e) => e.setAttribute('data-tc-hover', '1')).catch(() => {});
-  await p.m('V-03', 'hover');
+  await p.m('V-03', 'hover', undefined, g.scope);
   await item.evaluate((e) => e.removeAttribute('data-tc-hover')).catch(() => {});
   await page.mouse.move(5, 5);
+  await closeGroup(p, g);
 }
 
+// The merged group (Tag 1): the arrow, the one-line row, and the arrow really expands / collapses.
 async function checkMerge(p) {
   const { page } = p;
-  // the group's filter box may be collapsed: open it first
-  const opened = await page.evaluate(() => {
-    const tg = document.querySelector('.fdt-group-value__toggle');
-    if (!tg) return false;
-    const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-    if (vis(tg)) { tg.scrollIntoView({ block: 'center' }); return true; }
-    const opt = tg.closest('filter-option, fdt-filter-option');
-    const head = opt && Array.from(opt.querySelectorAll('summary, button, [role=button], [class*="title" i], [class*="header" i]')).find(vis);
-    if (head) head.click();
-    return !!head;
-  });
-  if (opened) await page.waitForTimeout(900);
-  const r = await p.m('V-05', 'merge');
-  if (r.status !== 'pass') return;
-  // clicking the arrow must really expand or collapse
-  const tg = page.locator('.fdt-group-value__toggle:visible').first();
-  const before = await tg.getAttribute('aria-expanded').catch(() => null);
-  await tg.click({ force: true, timeout: 3000 }).catch(() => {});
-  await page.waitForTimeout(600);
-  const after = await tg.getAttribute('aria-expanded').catch(() => null);
-  if (before !== null && before === after) {
-    const last = p.results[p.results.length - 1];
-    last.status = 'fail';
-    last.detail = 'Clicking the arrow did not expand or collapse the group.';
+  const g = await openGroup(p, 'merged');
+  if (!g.ok) { p.add('V-05', 'na', 'This collection has no merged group (a group with an expand arrow on its values).'); return; }
+  const r = await p.m('V-05', 'merge', undefined, g.scope);
+  if (r.status === 'pass') {
+    const tg = page.locator(g.scope + ' .fdt-group-value__toggle:visible').first();
+    const before = await tg.getAttribute('aria-expanded').catch(() => null);
+    await tg.click({ force: true, timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const after = await tg.getAttribute('aria-expanded').catch(() => null);
+    if (before !== null && before === after) {
+      const last = p.results[p.results.length - 1];
+      last.status = 'fail';
+      last.detail = 'Clicking the arrow did not expand or collapse the group.';
+    }
+    await tg.click({ force: true, timeout: 2000 }).catch(() => {});
   }
-  await tg.click({ force: true, timeout: 2000 }).catch(() => {});
+  await closeGroup(p, g);
 }
 
 // Price slider. Finds the "Price" filter in whatever layout is on screen, opens it when it is collapsed (the horizontal layout
@@ -319,11 +389,11 @@ async function desktopPass(p, c) {
     await p.m('O-04', 'drawer-price');
   }
   await p.m('V-01', 'search-boxes');
-  await p.m('V-02', 'count-line');
+  await scoped(p, 'V-02', 'count-line', ['box', 'checklist', 'merged']);
   await checkHover(p);
   await checkPriceSlider(p);
   await checkMerge(p);
-  await p.m('V-07', 'checkbox');
+  await scoped(p, 'V-07', 'checkbox', ['checklist', 'merged']);
   await checkSelectedState(p);
   await p.m('V-12', 'icons');
   if (drawerOpen) await closeDrawer(page);
@@ -448,4 +518,27 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
   return { layout, viewport: viewportName, results: p.results, blocked };
 }
 
-module.exports = { runPass, load, collectors, changedRatio, detectLayout, dotsOnLine };
+// Before the tests: is Findter on the storefront of this theme? Looks at the collection page again and again (a fresh load each
+// time, every 20 s) until its container shows, or the time is up. A password page is reported as such.
+async function waitFindter({ browser, url, cookies, password, maxMs, selectorMs, pollMs }) {
+  const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, storageState: cookies && cookies.length ? { cookies, origins: [] } : undefined });
+  const page = await ctx.newPage();
+  const until = Date.now() + (maxMs || 240000);
+  let last = 'the page did not load', n = 0;
+  try {
+    while (Date.now() < until) {
+      n++;
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        const gate = await passGate(page, url, password);
+        if (gate.blocked) return { ok: false, blocked: true, detail: gate.reason };
+        await page.waitForSelector('#fdt-container', { timeout: selectorMs || 20000 });
+        return { ok: true, detail: '', looks: n };
+      } catch (e) { last = `Findter's container (#fdt-container) is not on the collection page after ${n} look(s) over ${Math.round((maxMs || 240000) / 60000)} minutes`; }
+      await page.waitForTimeout(pollMs || 20000);
+    }
+    return { ok: false, detail: last };
+  } finally { await ctx.close().catch(() => {}); }
+}
+
+module.exports = { runPass, load, collectors, changedRatio, detectLayout, dotsOnLine, waitFindter };

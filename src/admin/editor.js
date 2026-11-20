@@ -56,8 +56,9 @@ async function openEmbedsPanel(page, f) {
   return searchBox;
 }
 
-// WORKFLOW A.4 Tab 2: core embed on, wait 10 s.
-async function enableCore(ed) {
+// WORKFLOW A.4 Tab 2: core embed on. Switch it, give the editor time to apply it, and prove it is on (the button now offers "Disable").
+async function enableCore(ed, delays) {
+  const d = Object.assign({ afterEnable: 25000 }, delays || {});
   const { page, f } = ed;
   const searchBox = await openEmbedsPanel(page, f);
   await waitIdle(page, f);
@@ -70,7 +71,14 @@ async function enableCore(ed) {
     for (let i = 0; i < 8 && !(await have()); i++) await page.waitForTimeout(1000);
     if (!(await have())) throw new Error('Findter "Search & filter core" embed not found in this theme');
   }
-  if (await enable.count()) { await enable.click(); await page.waitForTimeout(10000); return 'core on'; }
+  if (await enable.count()) {
+    await enable.click();
+    await page.waitForTimeout(d.afterEnable);
+    await waitIdle(page, f);
+    for (let i = 0; i < 40 && (await disable.count()) === 0; i++) await page.waitForTimeout(1000); // is it really on now?
+    if ((await disable.count()) === 0) throw new Error('Clicked "Enable Search & filter core" but the editor still offers Enable (the switch did not take).');
+    return 'core on';
+  }
   return 'core already on';
 }
 
@@ -90,11 +98,32 @@ async function checkCompatPanel(ed, outDir, relDir, thresholds) {
   return { id: 'P-01', layout: 'panel', status: 'na', detail: 'Compatibility panel did not appear in the editor preview (embed not active yet, or theme already chosen).', shots: [] };
 }
 
-// WORKFLOW A.4: pick the theme in the core block's Theme list, enable Search suggestion, Save.
-async function chooseThemeAndSave(ed, themeName) {
+// WORKFLOW A.4: pick the theme in the core block's Theme list, enable Search suggestion, Save. Every switch gets time to apply
+// and is checked; after the save the editor is reloaded and all three are read back (core on, Theme list = this theme,
+// Search suggestion on). If one did not stick, the whole thing is done once more.
+async function readBack(page, themeName) {
+  const ed = { page };
+  ed.f = await editorFrame(page);
+  await waitIdle(page, ed.f);
+  await openEmbedsPanel(page, ed.f);
+  const f = ed.f;
+  const out = { f, core: false, theme: '', suggestion: false };
+  const on = f.getByRole('button', { name: 'Disable Search & filter core' });
+  for (let i = 0; i < 45 && (await on.count()) === 0; i++) await page.waitForTimeout(1000);
+  out.core = (await on.count()) > 0;
+  out.suggestion = (await f.getByRole('button', { name: 'Disable Search suggestion' }).count()) > 0;
+  if (out.core) {
+    await f.getByRole('button', { name: /^Search & filter core/ }).click().catch(() => {});
+    const sel = f.getByLabel('Theme list');
+    if (await sel.waitFor({ timeout: 25000 }).then(() => true, () => false)) out.theme = await sel.evaluate((e) => (e.options[e.selectedIndex] || {}).text || '').catch(() => '');
+  }
+  out.themeOk = norm(out.theme) === norm(themeName);
+  return out;
+}
+
+async function setupOnce(ed, themeName, steps, d) {
   const { page } = ed;
-  let { f } = ed;
-  const steps = [];
+  const f = ed.f;
   const searchBox = await openEmbedsPanel(page, f);
   if ((await searchBox.inputValue().catch(() => '')) !== '') { await searchBox.fill(''); await page.waitForTimeout(1500); }
   await f.getByRole('button', { name: /^Search & filter core/ }).click();
@@ -102,34 +131,56 @@ async function chooseThemeAndSave(ed, themeName) {
   await sel.waitFor({ timeout: 25000 });
   const options = await sel.locator('option').allTextContents();
   const match = options.find((o) => norm(o) === norm(themeName));
-  if (!match) return { ok: false, reason: 'not_in_findter_theme_list', detail: `Findter's Theme list has no "${themeName}"`, steps };
+  if (!match) return { ok: false, reason: 'not_in_findter_theme_list', detail: `Findter's Theme list has no "${themeName}"` };
   await sel.selectOption({ label: match });
   steps.push(`theme list = ${match}`);
-  await page.waitForTimeout(12000); // template of the app is applied to the theme
+  await page.waitForTimeout(d.afterThemeList); // the app applies its template to the theme
+  await waitIdle(page, f);
   const enableSug = f.getByRole('button', { name: 'Enable Search suggestion' });
-  if (await enableSug.count()) { await enableSug.click(); steps.push('suggestion on'); await page.waitForTimeout(20000); }
-  else if (await f.getByRole('button', { name: 'Disable Search suggestion' }).count()) steps.push('suggestion already on');
+  const disableSug = f.getByRole('button', { name: 'Disable Search suggestion' });
+  if (await enableSug.count()) {
+    await enableSug.click();
+    await page.waitForTimeout(d.afterSuggestion);
+    await waitIdle(page, f);
+    for (let i = 0; i < 40 && (await disableSug.count()) === 0; i++) await page.waitForTimeout(1000);
+    steps.push((await disableSug.count()) ? 'suggestion on' : 'suggestion click did not take');
+  } else if (await disableSug.count()) steps.push('suggestion already on');
   else steps.push('suggestion embed not found');
+  // everything is switched: wait, then Save and wait until the editor says it is saved (Save is greyed out again)
+  await page.waitForTimeout(d.beforeSave);
   await waitIdle(page, f);
   const save = f.getByRole('button', { name: 'Save', exact: true });
-  if (await save.isEnabled()) {
+  for (let i = 0; i < 60 && !(await save.isEnabled().catch(() => false)); i++) await page.waitForTimeout(1000); // it can take a moment to wake up
+  if (await save.isEnabled().catch(() => false)) {
     await save.click();
-    await page.waitForTimeout(4000);
+    for (let i = 0; i < 90 && (await save.isEnabled().catch(() => false)); i++) await page.waitForTimeout(1000);
     await waitIdle(page, f);
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(d.afterSave);
     steps.push('saved');
   } else steps.push('nothing to save');
-  // prove it persisted: reload and read the core switch back
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  f = await editorFrame(page);
-  ed.f = f;
-  await waitIdle(page, f);
-  await openEmbedsPanel(page, f);
-  const on = f.getByRole('button', { name: 'Disable Search & filter core' });
-  for (let i = 0; i < 45 && (await on.count()) === 0; i++) await page.waitForTimeout(1000);
-  if ((await on.count()) === 0) return { ok: false, reason: 'save_not_persisted', detail: 'After reloading the editor the core embed is OFF.', steps };
-  steps.push('reloaded: core embed is on');
-  return { ok: true, steps };
+  return { ok: true };
+}
+
+async function chooseThemeAndSave(ed, themeName, delays) {
+  const d = Object.assign({ afterThemeList: 25000, afterSuggestion: 30000, beforeSave: 10000, afterSave: 20000 }, delays || {});
+  const steps = [];
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) steps.push('not everything stuck: doing it once more');
+    const r = await setupOnce(ed, themeName, steps, d);
+    if (!r.ok) return Object.assign(r, { steps });
+    // prove it persisted: reload the editor and read all three switches back
+    await ed.page.reload({ waitUntil: 'domcontentloaded' });
+    const back = await readBack(ed.page, themeName);
+    ed.f = back.f;
+    steps.push(`read back: core ${back.core ? 'on' : 'OFF'}, theme list "${back.theme || '?'}"${back.themeOk ? '' : ' (WRONG)'}, suggestion ${back.suggestion ? 'on' : 'OFF'}`);
+    if (back.core && back.themeOk && back.suggestion) { steps.push('reloaded: everything is on'); return { ok: true, steps }; }
+    if (attempt === 2) {
+      const what = [!back.core && 'the core embed is OFF', !back.themeOk && `the Theme list is "${back.theme || 'empty'}", not "${themeName}"`, !back.suggestion && 'Search suggestion is OFF'].filter(Boolean).join('; ');
+      return { ok: false, reason: 'save_not_persisted', detail: 'After saving and reloading the editor: ' + what + '.', steps };
+    }
+    ed.f = back.f;
+  }
+  return { ok: false, reason: 'save_not_persisted', detail: 'unknown', steps };
 }
 
 // WORKFLOW A.4: "..." (View actions) on the editor header, then Preview. The tab that opens is Tab 3.

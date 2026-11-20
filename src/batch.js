@@ -11,7 +11,7 @@ const { chromium, openAdmin, profileDirFor, keyOf, norm } = require('./lib/brows
 const design = require('./admin/design');
 const editor = require('./admin/editor');
 const themesApi = require('./admin/themes');
-const { runPass } = require('./checks/run');
+const { runPass, waitFindter } = require('./checks/run');
 const { render } = require('./report/html');
 const { findPrevious } = require('./report/compare');
 const { runsDir, dataDir } = require('./store/paths');
@@ -29,7 +29,9 @@ const stamp = () => T.today(); // the day in UTC+7
 //   installWait  = pause after the install lands, before looking for the theme
 //   readyPoll    = how often the theme list is read while waiting; readyTimeout = how long to wait at most
 //   afterListed  = extra pause once the theme is listed, before its editor is tried
-const DELAYS = { afterInstall: 20000, afterClean: 15000, beforeEdit: 6000, afterExit: 4000, afterPublish: 15000, installWait: 90000, afterListed: 45000, readyPoll: 30000, readyTimeout: 600000 };
+const DELAYS = { afterInstall: 20000, afterClean: 15000, beforeEdit: 6000, afterExit: 4000, afterPublish: 15000, installWait: 90000, afterListed: 45000, readyPoll: 30000, readyTimeout: 600000,
+  // in the theme editor: time for every switch to apply, and for Findter to show on the storefront, before any test
+  afterEnable: 25000, afterThemeList: 25000, afterSuggestion: 30000, beforeSave: 10000, afterSave: 20000, findterReady: 240000 };
 
 function saveRun(runDir, run, checklist, prev) {
   fs.mkdirSync(runDir, { recursive: true });
@@ -75,11 +77,11 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
     step('setup', 'Tab 2: opening the theme editor');
     ed = await editor.openEditor(ctx, env, themeId);
     step('setup', 'Tab 2: turning on the Search & filter core embed');
-    out.setup.core = await editor.enableCore(ed);
+    out.setup.core = await editor.enableCore(ed, delays);
     step('setup', 'Tab 2: checking the Compatibility panel');
     const panel = await editor.checkCompatPanel(ed, outDir, `${key}/panel`, cfg.thresholds);
     step('setup', 'Tab 2: choosing the theme in Theme list, turning on Search suggestion, saving');
-    const chosen = await editor.chooseThemeAndSave(ed, theme.name);
+    const chosen = await editor.chooseThemeAndSave(ed, theme.name, delays);
     out.setup.steps = chosen.steps;
     if (!chosen.ok) { out.setupFailed = { reason: chosen.reason, detail: chosen.detail }; return out; }
     // ---- Tab 3: Preview from the editor
@@ -88,6 +90,19 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
     out.setup.previewVia = prev.via;
     prog.event(`${theme.name}: Tab 3 opened via ${prev.via}`);
     add({ layout: 'panel', viewport: 'desktop', results: [panel] });
+    // Before any test: is Findter really on the storefront of this theme? If not, do the editor setup once more and look again.
+    const storefrontPassword = env.storefrontPassword || process.env[`STOREFRONT_PASSWORD_${envName(env)}`];
+    step('setup', 'Waiting until Findter shows on the storefront (everything must be ON before testing)');
+    let ready = await waitFindter({ browser, url: prev.url, cookies: prev.cookies, password: storefrontPassword, maxMs: delays.findterReady });
+    if (!ready.ok && !ready.blocked) {
+      log(`  ${theme.name}: Findter is not on the storefront yet (${ready.detail}). Doing the editor setup once more.`);
+      step('setup', 'Findter is not on the storefront: doing the editor setup once more');
+      const again = await editor.chooseThemeAndSave(ed, theme.name, delays);
+      out.setup.steps = (out.setup.steps || []).concat(['the storefront check failed, setup repeated'], again.steps || []);
+      ready = await waitFindter({ browser, url: prev.url, cookies: prev.cookies, password: storefrontPassword, maxMs: delays.findterReady });
+    }
+    if (!ready.ok) { out.setupFailed = { reason: ready.blocked ? 'storefront_blocked' : 'findter_not_on_storefront', detail: ready.detail }; return out; }
+    out.setup.storefrontReady = `Findter showed on the storefront (look ${ready.looks})`;
 
     const common = { browser, url: prev.url, outDir, thresholds: cfg.thresholds, keyword: cfg.keyword, cookies: prev.cookies, password: env.storefrontPassword || process.env[`STOREFRONT_PASSWORD_${envName(env)}`] };
     const P = (layout, viewportName, rel) => runPass(Object.assign({}, common, { layout, viewportName, viewport: cfg.viewports[viewportName], relDir: `${key}/${rel}` }));

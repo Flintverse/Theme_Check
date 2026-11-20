@@ -118,12 +118,13 @@ async function upgradeReports(root, cfg, opts) {
   for (const runId of ids) {
     if (runId === going) continue;
     const rep = path.join(dir, runId, 'report.html');
-    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('tc-report-v3')) continue;
+    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('tc-report-v4')) continue;
     o.refresh({ root, cfg, runId, checklist: cfgLib.loadChecklist(root) });
     const pages = fs.readdirSync(path.join(dir, runId)).filter((n) => /^report.*.html$/.test(n)).map((n) => path.join(dir, runId, n));
     await sync.pushRunFiles(monitor, path.join(dir, runId), runId, { files: pages, fetchImpl: o.fetchImpl });
     upgraded++;
   }
+  if (upgraded) await sync.pushState(monitor, require('./publish').buildState(root, cfg, { remote: true }), o.fetchImpl).catch(() => {}); // the run list now carries the theme names
   return { upgraded };
 }
 

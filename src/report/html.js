@@ -128,7 +128,7 @@ function render(run, checklist, prevRun, opts) {
 
   const fixedHtml = fixed.length ? `<div class="note"><b>Fixed since the previous run (${fixed.length})</b><ul>${fixed.map((r) => `<li>${esc(r.theme)} / ${esc(r.layout)} / ${esc(r.id)}${chg('FIXED')}</li>`).join('')}</ul></div>` : '';
 
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${only ? esc(only) + ' - ' : ''}Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body><!-- tc-report-v3 -->${NAV(run, only)}<div class="wrap">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${only ? esc(only) + ' - ' : ''}Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body><!-- tc-report-v4 -->${NAV(run, only)}<div class="wrap">
 <div><div class="eyebrow">Theme check | Findter</div><h1>${only ? esc(only) + ': theme report' : 'Theme compatibility run ' + esc(run.runId)}</h1></div>
 <dl class="facts"><div><dt>Environment</dt><dd>${esc(run.env)} (${esc(run.shop || '')})</dd></div><div><dt>Run</dt><dd>${esc(require('../lib/time').fmtStamp(run.startedAt))}</dd></div><div><dt>Themes</dt><dd>${themes.length}</dd></div><div><dt>Checklist</dt><dd>${checklist.items.length} items, v${esc(checklist.version)}</dd></div><div><dt>Compared with</dt><dd>${prevRun ? esc(prevRun.runId) : 'no earlier run'}</dd></div></dl>
 <div class="totals"><div class="t t-pass"><b>${t.pass}</b>PASS</div><div class="t t-fail"><b>${t.fail + (t.error || 0)}</b>FAIL</div><div class="t t-review"><b>${t.review}</b>REVIEW</div><div class="t t-na"><b>${t.na}</b>N/A</div></div>

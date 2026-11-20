@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Theme check - user guide</title>
+<style>
+:root{--bg:#f5f6f4;--surface:#fff;--ink:#1b2321;--muted:#5b6662;--line:#dfe3df;--accent:#1f6f5c;--accent-ink:#fff;--pass:#1c7a4a;--pass-bg:#e3f3e9;--fail:#b42318;--fail-bg:#fdeceb;--warn:#9a5b00;--warn-bg:#fdf2dc}
+@media (prefers-color-scheme:dark){:root{--bg:#121615;--surface:#1a201e;--ink:#e6ebe8;--muted:#9aa6a1;--line:#2c3532;--accent:#5fc3a7;--accent-ink:#0b1210;--pass:#6fd39c;--pass-bg:#173326;--fail:#f08a80;--fail-bg:#3a1b19;--warn:#e7b25a;--warn-bg:#3a2d12}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
+.top{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:10px 16px}
+.top a{color:var(--accent);text-decoration:none;font-weight:600;padding:4px 8px;border-radius:8px}.top a:hover{background:var(--bg)}
+.top .back{border:1px solid var(--line);color:var(--ink)}
+main{max-width:860px;margin:0 auto;padding:24px 16px 80px;display:grid;gap:26px}
+h1{font:700 28px Georgia,serif;margin:0}
+h2{font:700 20px system-ui;margin:0 0 8px;display:flex;gap:10px;align-items:center}
+h2 .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;width:28px;height:28px;display:inline-grid;place-items:center;font-size:15px;flex:none}
+p{margin:6px 0}
+.muted{color:var(--muted)}
+section{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+ol,ul{margin:8px 0;padding-left:22px}li{margin:4px 0}
+figure{margin:12px 0 4px}
+figure img{width:100%;height:auto;border:1px solid var(--line);border-radius:8px;display:block}
+figcaption{font-size:14px;color:var(--muted);margin-top:6px}
+.b{display:inline-grid;place-items:center;background:#d92d20;color:#fff;border-radius:999px;width:20px;height:20px;font:700 12px system-ui;vertical-align:1px}
+.pill{font:600 12px ui-monospace,monospace;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.p-pass{background:var(--pass-bg);color:var(--pass)}.p-fail{background:var(--fail-bg);color:var(--fail)}.p-warn{background:var(--warn-bg);color:var(--warn)}.p-na{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+table{border-collapse:collapse;width:100%;font-size:15px}td,th{border-top:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+.tip{background:var(--warn-bg);border-radius:8px;padding:10px 12px;margin:10px 0}
+code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:0 5px;font-size:14px}
+</style>
+</head>
+<body>
+<nav class="top" aria-label="The tool">
+  <a class="back" href="./#live">&larr; Back to the dashboard</a>
+  <a href="./#live">Live</a><a href="./#overview">Overview</a><a href="./#issues">Issue tracker</a><a href="./#runs">Runs</a><a href="./#themes">Themes</a><a href="./#schedule">Schedule</a>
+</nav>
+<main>
+<div>
+  <h1>Theme check: user guide</h1>
+  <p class="muted">What it is, and how to use it. About 5 minutes to read.</p>
+</div>
+
+<section>
+  <h2>What this tool does</h2>
+  <p>It takes Shopify themes one by one, puts <b>Findter</b> on each, checks that everything looks and works right, and shows you what <b>passes</b> and what <b>fails</b>, with a picture for every check.</p>
+  <ul>
+    <li>Open it: <b>bss-theme-check.pages.dev</b>. Sign in with your <b>@bsscommerce.com</b> Google account.</li>
+    <li>Everyone in the company can look. Only the <b>editors</b> can change things (marked <i>editors only</i> below).</li>
+    <li>All times are <b>UTC+7</b>.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">1</span>The pages</h2>
+  <figure><img src="guide/nav.png" alt="The menu at the top of every page" loading="lazy"><figcaption>The menu is on every page. <span class="b">1</span> Back goes to the page you were on. <span class="b">2</span> Where you are. <span class="b">3</span> All the pages.</figcaption></figure>
+  <table>
+    <tr><td><b>Live</b></td><td>The run happening now, theme by theme.</td></tr>
+    <tr><td><b>Overview</b></td><td>The numbers of the latest run: how many fail, the worst themes, the most common problems.</td></tr>
+    <tr><td><b>Issue tracker</b></td><td>Every problem seen so far: still <b>open</b> or <b>fixed</b>, and since when.</td></tr>
+    <tr><td><b>Runs</b></td><td>Every past run. Open any theme of any run.</td></tr>
+    <tr><td><b>Themes</b></td><td>The list of themes to test.</td></tr>
+    <tr><td><b>Schedule</b></td><td>When the test runs by itself.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">2</span>Watch a run: Live</h2>
+  <figure><img src="guide/live.png" alt="The Live page" loading="lazy"><figcaption><span class="b">1</span> How far the run is. <span class="b">2</span> Button: the full report of all themes. <span class="b">3</span> Passed / failed so far. <span class="b">4</span> One line per theme: click the name to look inside.</figcaption></figure>
+  <p>What the status words mean:</p>
+  <table>
+    <tr><td><span class="pill p-na">QUEUED</span></td><td>Waiting for its turn.</td></tr>
+    <tr><td><span class="pill p-warn">INSTALLING / INSTALLED</span></td><td>Being added to the store. The tool waits until the theme shows in the theme list and its editor opens.</td></tr>
+    <tr><td><span class="pill p-warn">SETUP</span></td><td>Editor open: turning Findter on, choosing the theme.</td></tr>
+    <tr><td><span class="pill p-pass">TESTING</span></td><td>Checking the pages.</td></tr>
+    <tr><td><span class="pill p-pass">DONE</span> <span class="pill p-fail">FAILED</span></td><td>Finished. FAILED means the theme could not be set up (it says why).</td></tr>
+  </table>
+  <p class="muted">The <b>Time</b> column counts only from the moment the theme editor opens. Installing and waiting are not counted.</p>
+</section>
+
+<section>
+  <h2><span class="n">3</span>Look inside one theme, and correct a result</h2>
+  <p>On <b>Live</b>, click a theme name. A panel opens on the right. You do not need to wait for the other themes.</p>
+  <figure><img src="guide/drawer.png" alt="The theme panel" loading="lazy"><figcaption><span class="b">1</span> Back, Previous theme, Next theme. <span class="b">2</span> The numbers of this theme. <span class="b">3</span> A check that failed, and what was found. <span class="b">4</span> The picture (click it to enlarge, <b>X</b> to close). <span class="b">5</span> <b>Your verdict</b> boxes.</figcaption></figure>
+  <ol>
+    <li>Read <b>What was found</b> and look at the picture. Failed checks come first.</li>
+    <li>If the tool is wrong, or the problem is too small to matter, tick one box: <b>Skip</b> (ignore it), <b>Pass</b>, <b>Review</b> (someone must look), or <b>Fail</b>.</li>
+    <li>Done. The numbers change at once. The report, the Overview and the Issue tracker follow in about a minute.</li>
+  </ol>
+  <ul>
+    <li>Untick the box to go back to what the tool found. The tool's own answer is never lost: the row still says <i>script said: FAIL</i>.</li>
+    <li>To mark a check that <b>passed</b> as a <b>Fail</b> (you checked by hand), tick <i>Also show the passed checks</i> first.</li>
+    <li><i>Editors only.</i> Everyone else sees the boxes greyed out.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">4</span>Reports</h2>
+  <figure><img src="guide/report.png" alt="A report of one theme" loading="lazy"><figcaption><span class="b">1</span> Links to every page of the tool, and back to the dashboard. <span class="b">2</span> <b>Change the results of this theme</b>: opens the panel above. <span class="b">3</span> Pictures: click to enlarge, <b>X</b> to close.</figcaption></figure>
+  <ul>
+    <li><b>Full theme report</b>: all themes of a run in one page. Button on <b>Live</b>, or <b>Runs</b> &rarr; <i>full report</i>. Click a theme name in it to open that theme's own report.</li>
+    <li><b>Report of this theme</b>: only that theme. Find it at the bottom of the theme panel.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">5</span>Old runs</h2>
+  <figure><img src="guide/runs.png" alt="The Runs page" loading="lazy"><figcaption><span class="b">1</span> Each line is one run. <span class="b">2</span> Open the full report. <span class="b">3</span> Open the list of themes, then click one: the same panel opens, and you can correct its results too.</figcaption></figure>
+</section>
+
+<section>
+  <h2><span class="n">6</span>Themes and schedule <small class="muted">(editors only)</small></h2>
+  <figure><img src="guide/schedule.png" alt="The Schedule page" loading="lazy"><figcaption><span class="b">1</span> How often and at what time (UTC+7). <span class="b">2</span> Save. <span class="b">3</span> What happened after Save.</figcaption></figure>
+  <ul>
+    <li><b>Themes</b> tab: add a theme, remove one, or switch one off. Press Save.</li>
+    <li><b>Schedule</b> tab: daily, weekly, or every N days. Press <b>Save schedule</b>.</li>
+    <li>After Save the tool updates the test PC, the Windows timer, the website and GitHub <b>by itself</b>. Each step shows OK or failed.</li>
+  </ul>
+  <p class="tip">The test PC must be <b>on</b> at the scheduled time. The tool needs a real Chrome window and a saved Shopify login, so it cannot run in the cloud.</p>
+</section>
+
+<section>
+  <h2><span class="n">7</span>What the tool does to each theme</h2>
+  <ol>
+    <li><b>Install</b> the theme (one at a time) and <b>wait</b> until it shows in the theme list and its editor opens.</li>
+    <li><b>Open the editor</b>: turn Findter on, choose the theme.</li>
+    <li><b>Vertical</b> layout, plus <b>Search</b> on desktop and mobile: check.</li>
+    <li>Switch to <b>Horizontal</b>: check. Open the <b>Price</b> filter and look at its slider.</li>
+    <li>Switch to <b>Off-canvas</b>, and <b>Mobile</b>: check.</li>
+    <li>Put the layout back to Vertical and <b>delete</b> the theme. Then the next one.</li>
+  </ol>
+  <p class="muted">The live theme of the store is never deleted. If it is on the list, it is tested where it is.</p>
+</section>
+
+<section>
+  <h2>If something looks wrong</h2>
+  <ul>
+    <li><b>A result looks wrong:</b> tick your verdict (step 3), then tell the developer which check and what you saw.</li>
+    <li><b>The page says "stopped unexpectedly" or the run does not move:</b> the test PC or the run stopped. Tell the developer.</li>
+    <li><b>The boxes are greyed out:</b> your account is not an editor.</li>
+    <li><b>Lost?</b> Press <b>Back</b>, or open any page from the menu.</li>
+  </ul>
+</section>
+</main>
+</body>
+</html>

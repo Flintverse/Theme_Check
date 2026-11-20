@@ -37,6 +37,8 @@ Save once, everything follows: when someone on the list `EDITORS` (wrangler.toml
 
 Manual verdicts: in the Live page, click a theme and tick **Skip / Pass / Review / Fail** on any check row (untick to go back to what the script found). The script's own result is never changed (`results.json`); the verdicts are in `history/runs/<run>/overrides.json`, and the report, the numbers, the run overview and the issue tracker follow them. Only editors can tick on the web copy; the local dashboard can always. The agent keeps the web copy and this machine in step (the higher `rev` wins).
 
+User guide for the team: `ui/guide.html` (the **Guide** link in the dashboard menu). Short, step by step, with pictures; the pictures are made by `node tools/guide-shots.js` from demo data (run it when no test run is going).
+
 Navigation: every page has a way back and a way to every other page. The dashboard has a **Back** button, breadcrumbs and the tabs on every page; a theme opened from Live is in the address (`#live/<theme>`), so the browser's Back closes it and a link to it can be shared; the drawer has Back to Live, Previous / Next theme and links to every tab (and to the Issue tracker filtered to that theme). The full report has a bar with links to every page of the tool. Pages are `#live`, `#overview`, `#issues`, `#runs`, `#themes`, `#schedule`.
 
 All times in the logs, reports, mail and dashboard are **UTC+7**; a run belongs to its UTC+7 day. Stored timestamps stay in UTC. Task Scheduler runs at the PC's clock, so the PC must be set to UTC+7.

@@ -48,6 +48,9 @@ function publish(root, cfg, outDir, opts) {
   fs.rmSync(out, { recursive: true, force: true });
   fs.mkdirSync(path.join(out, 'api'), { recursive: true });
   fs.copyFileSync(path.join(root, 'ui', 'index.html'), path.join(out, 'index.html'));
+  // the user guide and its pictures
+  if (fs.existsSync(path.join(root, 'ui', 'guide.html'))) fs.copyFileSync(path.join(root, 'ui', 'guide.html'), path.join(out, 'guide.html'));
+  if (fs.existsSync(path.join(root, 'ui', 'guide'))) copyTree(path.join(root, 'ui', 'guide'), path.join(out, 'guide'));
   const state = buildState(root, cfg);
   // dashboardOnly: for Cloudflare Pages, where the Functions serve the data and the runs from R2
   if (opts && opts.dashboardOnly) return { out, runs: state.runs.length, files: 1 };

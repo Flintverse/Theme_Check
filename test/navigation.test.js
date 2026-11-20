@@ -44,7 +44,8 @@ test('dashboard: Back button, breadcrumbs, the theme drawer in the address, prev
     await page.goto(url + '#overview');
     await page.waitForSelector('#nav a');
     // every page is one click away, and the brand goes home
-    assert.deepStrictEqual(await page.locator('#nav a').evaluateAll((a) => a.map((x) => x.getAttribute('href').slice(1))), TABS);
+    assert.deepStrictEqual(await page.locator('#nav a[href^="#"]').evaluateAll((a) => a.map((x) => x.getAttribute('href').slice(1))), TABS);
+    assert.strictEqual(await page.getAttribute('#nav a[href="guide.html"]', 'href'), 'guide.html', 'the user guide is one click away');
     assert.strictEqual(await page.getAttribute('a.brand', 'href'), '#overview');
     assert.strictEqual(await page.isDisabled('#back'), true, 'nothing to go back to on the first page');
     assert.match(await page.textContent('#crumbs'), /Theme check\s*›\s*Overview/);

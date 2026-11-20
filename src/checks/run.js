@@ -217,8 +217,8 @@ async function checkPriceSlider(p) {
     await page.evaluate(() => document.querySelectorAll('[data-tc-price],[data-tc-price-title]').forEach((e) => { e.removeAttribute('data-tc-price'); e.removeAttribute('data-tc-price-title'); })).catch(() => {});
   };
   if (!(await slider.isVisible().catch(() => false))) { p.add('V-04', 'review', "The 'Price' filter was found but its slider did not open. Look at the picture.", [await p.shot('V-04-slider')]); await cleanup(); return; }
-  await slider.scrollIntoViewIfNeeded().catch(() => {});
-  await page.waitForTimeout(400);
+  await slider.evaluate((e) => e.scrollIntoView({ block: 'center', inline: 'nearest' })).catch(() => {});
+  await page.waitForTimeout(700);
   const track = await page.locator('[data-tc-price="1"] .fdt-range-slider').first().boundingBox().catch(() => null);
   const shot = await p.shot('V-04-price-slider');
   if (!track) { p.add('V-04', 'review', 'The Price slider is open but its line was not found. Look at the picture.', [shot]); await cleanup(); return; }
@@ -235,20 +235,23 @@ async function checkPriceSlider(p) {
   await cleanup();
 }
 
-// Scroll-to-top: scroll fast, with the mouse wheel, down to the bottom of the page like a person, then look for the arrow.
+// Scroll-to-top: like a person. A fresh copy of the page (the earlier checks click filters and change it), then scroll fast with
+// the mouse wheel towards the bottom and look at the arrow while scrolling and when the bottom is reached.
 async function checkScrollTop(p) {
   const { page } = p;
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(300);
+  await load(page, p.baseUrl || page.url(), p.password).catch(() => {}); // the start address again: no filter left from the earlier checks
   await page.mouse.move(600, 400);
+  const shown = () => page.evaluate(() => { const e = Array.from(document.querySelectorAll('fdt-scroll-to-top')).find((x) => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; }); return !!e; });
+  let seen = false;
   for (let i = 0; i < 60; i++) {
     await page.mouse.wheel(0, 1200);
     await page.waitForTimeout(60);
+    if (i % 2 === 1 && (await shown())) { seen = true; break; }
     if (await page.evaluate(() => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4)) break;
   }
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(seen ? 400 : 1500);
   let r = await page.evaluate(measure, { id: 'V-06', opts: p.T }).catch((e) => ({ status: 'error', detail: String(e.message).slice(0, 160) }));
-  if (r.status === 'fail') { // give it a moment and a little more movement, then look again
+  if (r.status === 'fail') { // not there yet: a little more movement at the bottom, then look again
     await page.mouse.wheel(0, -300); await page.waitForTimeout(200); await page.mouse.wheel(0, 600);
     await page.waitForTimeout(2000);
     r = await page.evaluate(measure, { id: 'V-06', opts: p.T }).catch((e) => ({ status: 'error', detail: String(e.message).slice(0, 160) }));
@@ -428,6 +431,7 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
   const page = await ctx.newPage();
   const c = collectors(page);
   const p = new Pass({ page, outDir, relDir, layout, viewport: viewportName, thresholds, keyword });
+  p.baseUrl = url; p.password = password; // the clean start address (no filters in it), for the checks that need a fresh page
   let blocked = null;
   try {
     const loaded = await load(page, url, password);

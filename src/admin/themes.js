@@ -168,13 +168,15 @@ async function deleteTheme(ctx, env, id, debugDir) {
 
 // The themes page shows the live theme and at most 5 draft themes, newest first, so a store with more themes needs
 // several passes: delete what is shown, read again, until only the live theme is left. The live theme is never touched.
-async function cleanDrafts(ctx, env, log, debugDir, protectIds) {
+// protectNames: themes that are kept by name even when they are drafts (for example Horizon, the store's base theme).
+async function cleanDrafts(ctx, env, log, debugDir, protectIds, protectNames) {
   const keep = new Set(protectIds || []);
+  const keepNames = new Set((protectNames || []).map((n) => norm(n)));
   let deleted = 0;
   const failed = new Set();
   for (let pass = 0; pass < 12; pass++) {
     const lib = await listThemes(ctx, env);
-    const drafts = lib.filter((t) => !t.live && !failed.has(t.id) && !keep.has(t.id));
+    const drafts = lib.filter((t) => !t.live && !failed.has(t.id) && !keep.has(t.id) && !(t.name && keepNames.has(norm(t.name))));
     if (!drafts.length) break;
     for (const t of drafts) {
       const r = await deleteTheme(ctx, env, t.id, debugDir);

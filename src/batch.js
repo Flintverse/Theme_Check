@@ -151,6 +151,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   let designPage = null;
   const dbg = path.join(runDir, '_debug');
+  const keepNames = env.keepThemes || env.pivots || []; // never deleted, even as drafts (Horizon: the store's base theme)
   let liveInfo = null; // the published theme of the store: never deleted, never changed unless it is the theme to test
 
   const record = async (t, id, asEnv) => {
@@ -166,7 +167,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
     let r = await themesApi.installAndFind(ctx, env, t.name, new Set(library.map((x) => x.id)));
     if (!r.ok && r.reason === 'library_full' && canClean) {
       log(`  ${t.name}: the store is full, cleaning and trying once more`);
-      await themesApi.cleanDrafts(ctx, env, log, dbg, liveInfo ? [liveInfo.id] : []);
+      await themesApi.cleanDrafts(ctx, env, log, dbg, liveInfo ? [liveInfo.id] : [], keepNames);
       await sleep(delays.afterClean);
       r = await themesApi.installAndFind(ctx, env, t.name, new Set((await themesApi.listThemes(ctx, env)).map((x) => x.id)));
     }
@@ -212,7 +213,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
 
     if (!opts.skipClean) { // leftovers of an earlier run (never the live theme)
       prog.setPhase('cleaning', 'Deleting draft themes left over from earlier runs');
-      const c = await themesApi.cleanDrafts(ctx, env, log, dbg, [liveInfo.id]);
+      const c = await themesApi.cleanDrafts(ctx, env, log, dbg, [liveInfo.id], keepNames);
       log(`  store cleaned: ${c.deleted} draft theme(s) deleted${c.failed.length ? ', ' + c.failed.length + ' could not be deleted' : ''}`);
       await sleep(delays.afterClean);
     }
@@ -268,7 +269,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
     try {
       prog.setPhase('cleaning', 'Checking that no test theme is left in the store');
       await afterRun(root, cfg, envKey, runDir, log, async (c2, e2) => {
-        const c = await themesApi.cleanDrafts(c2, e2, log, dbg, liveInfo ? [liveInfo.id] : []);
+        const c = await themesApi.cleanDrafts(c2, e2, log, dbg, liveInfo ? [liveInfo.id] : [], keepNames);
         log(`  store cleaned at the end: ${c.deleted} draft theme(s) deleted`);
       });
     } catch (e) { log('Final clean-up failed: ' + e.message); }

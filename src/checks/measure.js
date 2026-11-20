@@ -224,7 +224,7 @@ function measure(arg) {
         min = Math.min(min, Math.min(r.width, r.height)); max = Math.max(max, Math.max(r.width, r.height));
         const name = (svg.getAttribute('aria-label') || (svg.closest('button, a') && (svg.closest('button, a').getAttribute('aria-label') || '')) || 'icon ' + (i + 1)).slice(0, 24);
         if (Math.max(r.width, r.height) > 40) probs.push('"' + name + '" is enlarged (' + Math.round(r.width) + 'x' + Math.round(r.height) + 'px, it should be 6 to 40px)');
-        else if (Math.min(r.width, r.height) < 6) probs.push('"' + name + '" is almost invisible (' + Math.round(r.width) + 'x' + Math.round(r.height) + 'px)');
+        else if (Math.max(r.width, r.height) < 6) probs.push('"' + name + '" is almost invisible (' + Math.round(r.width) + 'x' + Math.round(r.height) + 'px)'); // a small chevron such as 8x5 is normal
         else if (Math.max(r.width, r.height) / Math.min(r.width, r.height) > 3) probs.push('"' + name + '" is stretched (' + Math.round(r.width) + 'x' + Math.round(r.height) + 'px)');
         if (!svg.querySelector('path, circle, line, polyline, polygon, rect, ellipse, use')) probs.push('"' + name + '" is empty (the icon has no shape)');
         const cs = getComputedStyle(svg);

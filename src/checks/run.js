@@ -30,7 +30,7 @@ class Pass {
     await this.page.screenshot(Object.assign({ path: file }, opts || {})).catch(() => {});
     return rel;
   }
-  add(id, status, detail, shots) { this.results.push({ id, layout: this.layout, status, detail: detail || '', shots: shots || [] }); }
+  add(id, status, detail, shots) { this.results.push({ id, layout: this.layout, status, detail: detail || '', shots: shots || [], sec: Math.round((Date.now() - (this.t0 || Date.now())) / 100) / 10 }); } // sec = seconds since the pass started, to see where the time goes
   async m(id, shotName, alias, scope) {
     let r;
     try { r = await this.page.evaluate(measure, { id: alias || id, opts: this.T, scope }); } catch (e) { r = { status: 'error', detail: String(e.message).slice(0, 160) }; }
@@ -179,7 +179,8 @@ async function checkSelectedState(p) {
     const s1 = await p.shot('V-10-' + kind + '-before-click');
     await item.locator('label, .search-filters__filter-option-item-label').first().click({ force: true, timeout: 4000 }).catch(() => item.click({ force: true }));
     await page.waitForTimeout(2200);
-    const again = page.locator(g.scope + ' li').filter({ hasText: text }).filter({ has: page.locator('input[type=checkbox]') }).first();
+    // the group is drawn again after a click (so its marker is gone): look the value up by its text among the visible values
+    const again = page.locator('#fdt-container li:visible').filter({ hasText: text }).filter({ has: page.locator('input[type=checkbox]') }).first();
     const box2 = (await again.boundingBox().catch(() => null)) || box;
     const after = await page.screenshot({ clip: { x: Math.max(0, box2.x), y: Math.max(0, box2.y), width: Math.min(box2.width, 400), height: box2.height } }).catch(() => null);
     const s2 = await p.shot('V-10-' + kind + '-after-click');
@@ -499,8 +500,10 @@ async function runPass({ browser, url, layout, viewportName, viewport, outDir, r
     storageState: cookies && cookies.length ? { cookies, origins: [] } : undefined,
   });
   const page = await ctx.newPage();
+  page.setDefaultTimeout(8000); // a missing element costs 8 s, not the 30 s default (navigation waits set their own, longer limits)
   const c = collectors(page);
   const p = new Pass({ page, outDir, relDir, layout, viewport: viewportName, thresholds, keyword });
+  p.t0 = Date.now();
   p.baseUrl = url; p.password = password; // the clean start address (no filters in it), for the checks that need a fresh page
   let blocked = null;
   try {

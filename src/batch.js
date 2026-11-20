@@ -25,7 +25,11 @@ const T = require('./lib/time');
 const stamp = () => T.today(); // the day in UTC+7
 
 // Pauses between actions. Generous on purpose: Shopify's admin is slow to settle after an install, a delete or a publish.
-const DELAYS = { afterInstall: 12000, afterClean: 10000, beforeEdit: 6000, afterExit: 4000, afterPublish: 15000, installWait: 180000 };
+// One theme at a time: install, wait until it shows up and can be edited, test, delete, next. The waits are generous on purpose.
+//   installWait  = pause after the install lands, before looking for the theme
+//   readyPoll    = how often the theme list is read while waiting; readyTimeout = how long to wait at most
+//   afterListed  = extra pause once the theme is listed, before its editor is tried
+const DELAYS = { afterInstall: 20000, afterClean: 15000, beforeEdit: 6000, afterExit: 4000, afterPublish: 15000, installWait: 90000, afterListed: 45000, readyPoll: 30000, readyTimeout: 600000 };
 
 function saveRun(runDir, run, checklist, prev) {
   fs.mkdirSync(runDir, { recursive: true });
@@ -129,9 +133,9 @@ async function afterRun(root, cfg, envNameStr, runDir, log, fn) {
 async function runBatches({ root, cfg, envName: envKey, themeList, checklist, opts }) {
   const env = cfg.envs[envKey];
   if (!env) throw new Error(`Unknown env "${envKey}" (config has: ${Object.keys(cfg.envs).join(', ')})`);
-  const delays = Object.assign({}, DELAYS, cfg.delays || {}, opts.skipWait ? { installWait: 0 } : {});
+  const delays = Object.assign({}, DELAYS, cfg.delays || {}, opts.skipWait ? { installWait: 0, afterListed: 5000 } : {});
   // a second run on the same day (for example a short test run) must not overwrite the first one
-  let runId = `${stamp()}-${envKey}`;
+  let runId = `${stamp()}-${envKey}` + (opts.label ? '-' + keyOf(opts.label) : '');
   if (fs.existsSync(path.join(runsDir(root, cfg), runId, 'results.json'))) runId += `-${T.fmtTime(new Date()).slice(0, 5).replace(':', '')}`;
   const runDir = path.join(runsDir(root, cfg), runId);
   const prev = findPrevious(runsDir(root, cfg), envKey, runId);
@@ -147,9 +151,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   let designPage = null;
   const dbg = path.join(runDir, '_debug');
-  const plan = planRun(themeList, env, cfg.batchSize || 15);
-  const pivotIds = new Map(); // name -> id
-  let rotate = plan.pivots.length === 2;
+  let liveInfo = null; // the published theme of the store: never deleted, never changed unless it is the theme to test
 
   const record = async (t, id, asEnv) => {
     log(` Testing ${t.name}`);
@@ -164,81 +166,90 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
     let r = await themesApi.installAndFind(ctx, env, t.name, new Set(library.map((x) => x.id)));
     if (!r.ok && r.reason === 'library_full' && canClean) {
       log(`  ${t.name}: the store is full, cleaning and trying once more`);
-      await themesApi.cleanDrafts(ctx, env, log, dbg, Array.from(pivotIds.values()));
+      await themesApi.cleanDrafts(ctx, env, log, dbg, liveInfo ? [liveInfo.id] : []);
       await sleep(delays.afterClean);
       r = await themesApi.installAndFind(ctx, env, t.name, new Set((await themesApi.listThemes(ctx, env)).map((x) => x.id)));
     }
-    if (r.ok) { prog.setTheme(t.name, { status: 'installed', step: 'Installed, waiting for its turn to be tested' }); log(`  ${t.name}: installed (${r.id})`); await sleep(delays.afterInstall); return r.id; }
+    if (r.ok) { prog.setTheme(t.name, { status: 'installed', step: 'Installed. Waiting until it can be edited' }); log(`  ${t.name}: installed (${r.id})`); await sleep(delays.afterInstall); return r.id; }
     run.themes.push({ name: t.name, passes: [], setupFailed: { reason: r.reason, detail: r.detail } });
     prog.setTheme(t.name, { status: 'failed', step: `install failed: ${r.reason}` });
     log(`  ${t.name}: install failed (${r.reason})`);
     return null;
   };
-  const makeLive = async (name) => {
-    const id = pivotIds.get(name);
-    if (!id) return false;
-    prog.setPhase('publishing', `Publishing ${name} so the store keeps a live theme`);
-    const r = await themesApi.publishTheme(ctx, env, id, dbg);
-    log(`  ${name} live: ${r.ok ? (r.note || 'published') : 'could not publish (' + r.reason + '), the previous live theme stays'}`);
-    if (r.ok) await sleep(delays.afterPublish);
-    return r.ok;
+  // Wait until a theme that was just installed is really usable: it is listed with its name, a pause, and its editor opens.
+  const waitUsable = async (t, id) => {
+    prog.setPhase('waiting', `Waiting until ${t.name} shows up in the theme list and can be edited`);
+    prog.setTheme(t.name, { status: 'installed', step: 'Installed. Waiting until it shows in the theme list...' });
+    if (delays.installWait) { log(`  ${t.name}: waiting ${Math.round(delays.installWait / 1000)} s before looking for it in the theme list`); await sleep(delays.installWait); }
+    const until = Date.now() + (delays.readyTimeout || 600000);
+    let listed = false, lastDetail = '';
+    for (let n = 1; Date.now() < until; n++) {
+      const lib = await themesApi.listThemes(ctx, env).catch(() => []);
+      listed = lib.some((x) => x.id === id && x.name);
+      if (listed) {
+        prog.setTheme(t.name, { step: 'Shown in the theme list. Checking that its editor opens...' });
+        await sleep(delays.afterListed);
+        const probe = await editor.probeEditor(ctx, env, id);
+        if (probe.ok) { log(`  ${t.name}: ready, it is listed and its editor opens (look ${n})`); return { ok: true }; }
+        lastDetail = probe.detail;
+        log(`  ${t.name}: listed, but not editable yet (${probe.detail})`);
+        prog.setTheme(t.name, { step: 'Not editable yet: ' + probe.detail });
+      } else {
+        lastDetail = 'not in the theme list';
+        prog.setTheme(t.name, { step: 'Not in the theme list yet, looking again soon...' });
+      }
+      await sleep(delays.readyPoll);
+    }
+    return { ok: false, reason: listed ? 'editor_not_ready' : 'not_listed', detail: `${lastDetail} after ${Math.round((delays.readyTimeout || 600000) / 60000)} minutes` };
   };
 
   try {
     prog.setPhase('login', 'Opening the Findter design page (Tab 1)');
     designPage = await design.openDesign(ctx, env);
+    liveInfo = await themesApi.liveTheme(ctx, env);
+    log(`Live theme at the start: ${liveInfo ? liveInfo.name : '(none found)'}. It is never deleted.`);
+    if (!liveInfo) throw new Error('No live (published) theme was found, so nothing is installed or deleted.');
 
-    if (plan.pivots.length) {
-      const [A, B] = [plan.pivots[0], plan.pivots[1]];
-      let live = await themesApi.liveTheme(ctx, env);
-      log(`Live theme at the start: ${live ? live.name : '(none found)'}`);
-      // ---- 1. the pivot that is live now (Horizon) is tested first, while live
-      if (live && norm(live.name) === norm(A.name)) {
-        pivotIds.set(A.name, live.id);
-        prog.setPhase('testing', `${A.name} (live theme) first`);
-        await record(A, live.id, Object.assign({}, env, { allowLiveTheme: true }));
-      } else { log(`  ${A.name} is not the live theme: pivots are skipped (the live theme stays as it is)`); rotate = false; }
-      // ---- 2. the second pivot (Dawn) as a draft, on its own
-      if (B && rotate) {
-        prog.setPhase('installing', `Installing ${B.name}`);
-        const lib = await themesApi.listThemes(ctx, env);
-        const have = lib.find((x) => !x.live && norm(x.name) === norm(B.name));
-        const id = have ? have.id : await install(B, lib, false);
-        if (id) {
-          pivotIds.set(B.name, id);
-          if (!have && delays.installWait) { prog.setPhase('waiting', `Waiting for ${B.name} to be usable`); await sleep(delays.installWait); }
-          prog.setPhase('testing', `${B.name} (draft) on its own`);
-          await record(B, id);
-        } else rotate = false;
+    if (!opts.skipClean) { // leftovers of an earlier run (never the live theme)
+      prog.setPhase('cleaning', 'Deleting draft themes left over from earlier runs');
+      const c = await themesApi.cleanDrafts(ctx, env, log, dbg, [liveInfo.id]);
+      log(`  store cleaned: ${c.deleted} draft theme(s) deleted${c.failed.length ? ', ' + c.failed.length + ' could not be deleted' : ''}`);
+      await sleep(delays.afterClean);
+    }
+
+    // ---- one theme at a time: install > wait until usable > test > delete > next
+    for (let i = 0; i < themeList.length; i++) {
+      const t = themeList[i];
+      log(`\nTheme ${i + 1} of ${themeList.length}: ${t.name}`);
+      if (norm(liveInfo.name) === norm(t.name)) { // it is the published theme: tested where it is, and not deleted
+        prog.setPhase('testing', `${t.name} (the live theme)`);
+        await record(t, liveInfo.id, Object.assign({}, env, { allowLiveTheme: true }));
+        continue;
       }
-    }
-    if (!plan.pivots.length || !rotate) { // no rotation: the old loop over the non-pivot themes (or all of them)
-      if (plan.pivots.length) plan.batches = planRun(themeList.filter((t) => !pivotIds.has(t.name) && !run.themes.some((r) => r.name === t.name)), {}, cfg.batchSize || 15).batches;
-    }
-
-    // ---- 3. batches
-    for (let bi = 0; bi < plan.batches.length; bi++) {
-      const group = plan.batches[bi];
-      log(`\nBatch ${bi + 1} of ${plan.batches.length}: ${group.map((t) => t.name).join(', ')}`);
-      if (rotate) await makeLive(bi % 2 === 0 ? plan.pivots[1].name : plan.pivots[0].name); // Dawn live for batch 1, Horizon for batch 2, ...
-      if (!opts.skipClean) {
-        prog.setPhase('cleaning', `Batch ${bi + 1}: deleting the draft themes of the previous batch`);
-        const c = await themesApi.cleanDrafts(ctx, env, log, dbg, Array.from(pivotIds.values()));
-        log(`  store cleaned: ${c.deleted} draft theme(s) deleted${c.failed.length ? ', ' + c.failed.length + ' could not be deleted' : ''}`);
+      prog.setPhase('installing', `Installing ${t.name} (one theme at a time)`);
+      const lib = await themesApi.listThemes(ctx, env);
+      const known = opts.skipClean ? lib.find((x) => !x.live && x.name && norm(x.name) === norm(t.name)) : null;
+      const id = known ? known.id : await install(t, lib, !opts.skipClean);
+      if (!id) continue; // install() recorded why
+      let usable = { ok: true };
+      if (known) log(`  ${t.name}: already in the library (${id})`);
+      else usable = await waitUsable(t, id);
+      if (usable.ok) {
+        prog.setPhase('testing', `Testing ${t.name}`);
+        await record(t, id);
+      } else {
+        run.themes.push({ name: t.name, id, passes: [], setupFailed: { reason: usable.reason, detail: usable.detail } });
+        prog.setTheme(t.name, { status: 'failed', step: `${usable.reason}: ${usable.detail}`.slice(0, 160) });
+        log(`  ${t.name}: not usable (${usable.reason}: ${usable.detail})`);
+        saveRun(runDir, run, checklist, prev);
+      }
+      if (!opts.keepThemes) { // uninstall it before the next theme is installed
+        prog.setPhase('cleaning', `Deleting ${t.name} from the store`);
+        const d = await themesApi.deleteTheme(ctx, env, id, dbg);
+        log(`  ${t.name}: ${d.ok ? 'deleted from the store' : 'could NOT be deleted (' + d.reason + '), the end-of-run clean-up will try again'}`);
+        prog.setTheme(t.name, { step: (d.ok ? 'Tested and deleted from the store' : 'Tested, but could not be deleted') });
         await sleep(delays.afterClean);
       }
-      prog.setPhase('installing', `Batch ${bi + 1}: installing ${group.length} themes`);
-      const ids = new Map();
-      let library = await themesApi.listThemes(ctx, env);
-      for (const t of group) {
-        const known = opts.skipClean ? library.find((x) => !x.live && x.name && norm(x.name) === norm(t.name)) : null;
-        if (known) { ids.set(t.name, known.id); log(`  ${t.name}: already in library (${known.id})`); continue; }
-        const id = await install(t, library, !opts.skipClean);
-        if (id) { ids.set(t.name, id); library = await themesApi.listThemes(ctx, env); }
-      }
-      if (ids.size && delays.installWait) { prog.setPhase('waiting', 'Waiting 3 minutes so every installed theme is fully usable'); log('  waiting 3 minutes so every theme is fully usable...'); await sleep(delays.installWait); }
-      prog.setPhase('testing', `Batch ${bi + 1} of ${plan.batches.length}: testing`);
-      for (const t of group) { if (ids.has(t.name)) await record(t, ids.get(t.name)); }
     }
   } catch (e) {
     outcome = 'failed';
@@ -252,24 +263,18 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
     process.removeListener('SIGINT', onSig);
     process.removeListener('SIGTERM', onSig);
   }
-  // ---- 4. restore: Horizon live again, test themes deleted (the pivots are kept)
-  if (outcome === 'completed') {
+  // ---- end: delete anything that could not be deleted on the way (never the live theme)
+  if (outcome === 'completed' && !opts.skipClean && !opts.keepThemes) {
     try {
-      prog.setPhase('cleaning', 'Restoring the live theme and deleting the test themes');
+      prog.setPhase('cleaning', 'Checking that no test theme is left in the store');
       await afterRun(root, cfg, envKey, runDir, log, async (c2, e2) => {
-        if (rotate && pivotIds.get(plan.pivots[0].name)) {
-          const r = await themesApi.publishTheme(c2, e2, pivotIds.get(plan.pivots[0].name), dbg);
-          log(`  ${plan.pivots[0].name} live again: ${r.ok ? 'yes' : 'could not publish (' + r.reason + ')'}`);
-        }
-        if (!opts.skipClean && !opts.keepThemes) {
-          const c = await themesApi.cleanDrafts(c2, e2, log, dbg, Array.from(pivotIds.values()));
-          log(`  store cleaned at the end: ${c.deleted} draft theme(s) deleted`);
-        }
+        const c = await themesApi.cleanDrafts(c2, e2, log, dbg, liveInfo ? [liveInfo.id] : []);
+        log(`  store cleaned at the end: ${c.deleted} draft theme(s) deleted`);
       });
-    } catch (e) { log('Final restore failed: ' + e.message); }
+    } catch (e) { log('Final clean-up failed: ' + e.message); }
   }
   prog.setPhase('finishing', 'Writing the report, summary and issue tracker');
-  const fin = finalizeRun({ root, cfg, run, checklist, trackIssues: true });
+  const fin = finalizeRun({ root, cfg, run, checklist, trackIssues: !opts.noTracker, keepAllPictures: !!opts.keepPictures });
   prog.event(`Finished: ${fin.summary.failedChecks} failing checks on ${fin.summary.themesWithIssues}/${fin.summary.themesTested} themes`);
   prog.finish(outcome);
   if (opts.onFinish) {

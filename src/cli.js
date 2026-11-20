@@ -85,7 +85,7 @@ async function doMail(cfg, runId, dry) {
     }
     if (!list.length) throw new Error('No themes selected (check --batches / --themes against config/themes.json).');
     console.log(`Config: ${cfg._file} | env: ${envName} | themes: ${list.length}`);
-    const { run, runDir } = await runBatches({ root: ROOT, cfg, envName, themeList: list, checklist: loadChecklist(), opts: { skipClean: !!args['skip-clean'], skipWait: !!args['skip-wait'], keepThemes: !!args['keep-themes'], show: !!args.show, headless: !!args.headless, onProgress: monitor.onProgress, onFinish: monitor.onFinish } });
+    const { run, runDir } = await runBatches({ root: ROOT, cfg, envName, themeList: list, checklist: loadChecklist(), opts: { skipClean: !!args['skip-clean'], skipWait: !!args['skip-wait'], keepThemes: !!args['keep-themes'], label: args.label ? String(args.label) : '', keepPictures: !!args['keep-pictures'], noTracker: !!args['no-tracker'], show: !!args.show, headless: !!args.headless, onProgress: monitor.onProgress, onFinish: monitor.onFinish } });
     console.log(`\nReport: ${path.join(runDir, 'report.html')}`);
     if (args.mail || args['dry-mail']) await doMail(cfg, run.runId, !!args['dry-mail']);
     return;

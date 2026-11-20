@@ -46,5 +46,63 @@ test('the pauses between admin actions are generous', () => {
   assert.ok(DELAYS.afterClean >= 10000);
   assert.ok(DELAYS.afterPublish >= 10000);
   assert.ok(DELAYS.beforeEdit >= 5000);
-  assert.strictEqual(DELAYS.installWait, 180000, 'the 3 minute wait for installed themes is kept');
+  assert.ok(DELAYS.installWait >= 60000, 'a pause after the install lands, before looking for the theme');
+  assert.ok(DELAYS.afterListed >= 30000, 'a pause once the theme is listed, before its editor is tried');
+  assert.ok(DELAYS.readyPoll >= 20000 && DELAYS.readyTimeout >= 300000, 'it keeps looking for several minutes');
+});
+
+test('one theme at a time: install, wait until usable, test, delete, next (the order of the calls, with stand-ins for the browser)', async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const Module = require('module');
+  // run runBatches with fake admin modules and record what happens, in order
+  const calls = [];
+  const fakeThemes = {
+    listThemes: async () => { calls.push('list'); return installed.map((x) => Object.assign({}, x)); },
+    liveTheme: async () => ({ id: '1', name: 'Horizon', live: true }),
+    cleanDrafts: async () => { calls.push('clean-leftovers'); return { deleted: 0, failed: [] }; },
+    installAndFind: async (ctx, env, name) => { calls.push('install ' + name); const id = String(100 + installed.length); installed.push({ id, name }); return { ok: true, id }; },
+    deleteTheme: async (ctx, env, id) => { calls.push('delete ' + id); const i = installed.findIndex((x) => x.id === id); if (i >= 0) installed.splice(i, 1); return { ok: true }; },
+    publishTheme: async () => { throw new Error('nothing is published any more'); },
+    norm: (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, ''),
+  };
+  const installed = [{ id: '1', name: 'Horizon', live: true }];
+  let probes = 0;
+  const fakeEditor = {
+    probeEditor: async () => { probes++; calls.push('probe'); return probes === 1 ? { ok: false, detail: 'not yet' } : { ok: true, detail: '' }; },
+    openEditor: async () => ({}), enableCore: async () => '', checkCompatPanel: async () => ({ id: 'P-01', layout: 'panel', status: 'na', detail: '', shots: [] }),
+    chooseThemeAndSave: async () => ({ ok: true, steps: [] }), getPreviewUrl: async () => ({ url: 'https://x', cookies: [], via: 'fake' }), exitEditor: async () => {},
+  };
+  const fakeDesign = { openDesign: async () => ({}), setLayout: async () => {} };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-flow-'));
+  ['checklist'].forEach((d) => fs.cpSync(path.join(__dirname, '..', d), path.join(root, d), { recursive: true }));
+  const real = Module._load;
+  Module._load = function (req, parent, isMain) {
+    if (/\/admin\/themes$/.test(req)) return fakeThemes;
+    if (/\/admin\/editor$/.test(req)) return fakeEditor;
+    if (/\/admin\/design$/.test(req)) return fakeDesign;
+    if (/\/lib\/browser$/.test(req) && parent && /batch\.js$/.test(parent.filename)) {
+      const b = real.apply(this, arguments);
+      return Object.assign({}, b, { openAdmin: async () => ({ close: async () => {} }), chromium: { launch: async () => ({ close: async () => {} }) } });
+    }
+    if (/\/checks\/run$/.test(req)) return { runPass: async (o) => ({ layout: o.layout, viewport: o.viewportName, results: [{ id: 'V-01', layout: o.layout, status: 'pass', detail: '', shots: [] }] }), detectLayout: async () => '' };
+    return real.apply(this, arguments);
+  };
+  delete require.cache[require.resolve('../src/batch')];
+  try {
+    const { runBatches } = require('../src/batch');
+    const cfg = { envs: { staging: { shop: 's', adminHandle: 'h', themeStoreShop: 'h' } }, viewports: { desktop: {}, mobile: {} }, thresholds: {}, delays: { afterInstall: 1, afterClean: 1, beforeEdit: 1, afterExit: 1, installWait: 1, afterListed: 1, readyPoll: 1, readyTimeout: 5000 }, archive: {} };
+    const list = [{ name: 'Dawn', batch: 1 }, { name: 'Craft', batch: 1 }];
+    const { run } = await runBatches({ root, cfg, envName: 'staging', themeList: list, checklist: require('../checklist/checklist.json'), opts: { label: 'unit' } });
+    const order = calls.filter((c) => c !== 'list');
+    const at = (x) => order.indexOf(x);
+    assert.ok(at('install Dawn') < at('delete 101'), 'Dawn is deleted after it is installed');
+    assert.ok(order.indexOf('delete 101') < order.indexOf('install Craft'), 'the next theme is installed only after the previous one is deleted');
+    assert.strictEqual(order.filter((c) => c === 'probe').length, 3, 'the first look said "not yet", so it waited and looked again; Craft was ready at once');
+    assert.ok(!order.includes('delete 1'), 'the live theme is never deleted');
+    assert.deepStrictEqual(run.themes.map((t) => t.name), ['Dawn', 'Craft']);
+    assert.ok(/-unit$/.test(run.runId), 'the label is in the run id');
+    assert.strictEqual(installed.length, 1, 'only the live theme is left');
+  } finally { Module._load = real; delete require.cache[require.resolve('../src/batch')]; }
 });

@@ -48,10 +48,10 @@ function gitPublish(dir, message) {
 }
 
 // run: the run object (already saved by batch.js). trackIssues=false for ad-hoc URL runs.
-function finalizeRun({ root, cfg, run, checklist, trackIssues }) {
+function finalizeRun({ root, cfg, run, checklist, trackIssues, keepAllPictures }) {
   const dir = runsDir(root, cfg);
   const runDir = path.join(dir, run.runId);
-  const out = { removedEvidence: pruneEvidence(runDir, run) };
+  const out = { removedEvidence: keepAllPictures ? 0 : pruneEvidence(runDir, run) }; // keepAllPictures: an audit run keeps the pictures of passing checks too
   const prev = findPrevious(dir, run.env, run.runId);
   writeJson(path.join(runDir, 'results.json'), run); // the script's own results, untouched
   const eff = ovr.applyOverrides(run, ovr.readOverrides(runDir)); // with the manual verdicts on top

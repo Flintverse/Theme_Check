@@ -177,4 +177,18 @@ async function exitEditor(ed, env) {
   await page.close().catch(() => {});
 }
 
-module.exports = { openEditor, enableCore, checkCompatPanel, chooseThemeAndSave, getPreviewUrl, exitEditor };
+// Is a freshly installed theme really editable? Opens its editor and waits for the editor itself (the app embeds panel),
+// then closes the page. Never changes anything.
+async function probeEditor(ctx, env, themeId) {
+  const page = await ctx.newPage();
+  try {
+    await page.goto(`https://admin.shopify.com/store/${env.adminHandle}/themes/${themeId}/editor?context=apps&previewPath=%2Fcollections%2Fall`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await showWindow(ctx, page);
+    await editorFrame(page); // throws when the editor does not load in about 70 s
+    return { ok: true, detail: '' };
+  } catch (e) {
+    return { ok: false, detail: String(e.message).split(/\r?\n/)[0].slice(0, 160) };
+  } finally { await page.close().catch(() => {}); }
+}
+
+module.exports = { probeEditor, openEditor, enableCore, checkCompatPanel, chooseThemeAndSave, getPreviewUrl, exitEditor };

@@ -172,10 +172,12 @@ async function chooseThemeAndSave(ed, themeName, delays) {
     await ed.page.reload({ waitUntil: 'domcontentloaded' });
     const back = await readBack(ed.page, themeName);
     ed.f = back.f;
-    steps.push(`read back: core ${back.core ? 'on' : 'OFF'}, theme list "${back.theme || '?'}"${back.themeOk ? '' : ' (WRONG)'}, suggestion ${back.suggestion ? 'on' : 'OFF'}`);
-    if (back.core && back.themeOk && back.suggestion) { steps.push('reloaded: everything is on'); return { ok: true, steps }; }
+    // The Theme list is NOT part of the proof: after a reload the editor shows it empty although Findter still works with the theme chosen (seen on Maximize).
+    // The proof that the choice took is the storefront check that follows (Findter's container must show).
+    steps.push(`read back: core ${back.core ? 'on' : 'OFF'}, suggestion ${back.suggestion ? 'on' : 'OFF'}${back.theme ? ', theme list shows "' + back.theme + '"' : ''}`);
+    if (back.core && back.suggestion) { steps.push('reloaded: core and suggestion are on'); return { ok: true, steps }; }
     if (attempt === 2) {
-      const what = [!back.core && 'the core embed is OFF', !back.themeOk && `the Theme list is "${back.theme || 'empty'}", not "${themeName}"`, !back.suggestion && 'Search suggestion is OFF'].filter(Boolean).join('; ');
+      const what = [!back.core && 'the core embed is OFF', !back.suggestion && 'Search suggestion is OFF'].filter(Boolean).join('; ');
       return { ok: false, reason: 'save_not_persisted', detail: 'After saving and reloading the editor: ' + what + '.', steps };
     }
     ed.f = back.f;

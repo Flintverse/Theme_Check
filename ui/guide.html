@@ -29,12 +29,16 @@ figcaption{font-size:14px;color:var(--muted);margin-top:6px}
 table{border-collapse:collapse;width:100%;font-size:15px}td,th{border-top:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
 .tip{background:var(--warn-bg);border-radius:8px;padding:10px 12px;margin:10px 0}
 code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:0 5px;font-size:14px}
+html{scroll-behavior:smooth}section{scroll-margin-top:64px}
+.codes{font-size:14px;min-width:760px}.codes td:first-child{white-space:nowrap;font-weight:700}.codes td:nth-child(2){white-space:nowrap}.codes tr.grp td{background:var(--bg);font-weight:700;border-top:2px solid var(--line)}
+#codes q{quotes:none;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:0 4px;font:13px ui-monospace,monospace;-webkit-box-decoration-break:clone;box-decoration-break:clone}#codes q::before,#codes q::after{content:none}.codes .e{display:block;margin:3px 0;color:var(--muted)}.codes .e b{color:var(--ink);font-weight:600}
+.wide{overflow-x:auto}
 </style>
 </head>
 <body>
 <nav class="top" aria-label="The tool">
   <a class="back" href="./#live">&larr; Back to the dashboard</a>
-  <a href="./#live">Live</a><a href="./#overview">Overview</a><a href="./#issues">Issue tracker</a><a href="./#runs">Runs</a><a href="./#themes">Themes</a><a href="./#schedule">Schedule</a>
+  <a href="./#live">Live</a><a href="./#overview">Overview</a><a href="./#issues">Issue tracker</a><a href="./#runs">Runs</a><a href="./#themes">Themes</a><a href="./#schedule">Schedule</a><a href="#codes">Mã test &amp; lỗi</a>
 </nav>
 <main>
 <div>
@@ -141,9 +145,186 @@ code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding
     <li><b>Vertical</b> layout, plus <b>Search</b> on desktop and mobile: check.</li>
     <li>Switch to <b>Horizontal</b>: check. Open the <b>Price</b> filter and look at its slider.</li>
     <li>Switch to <b>Off-canvas</b>, and <b>Mobile</b>: check.</li>
-    <li>Put the layout back to Vertical and <b>delete</b> the theme. Then the next one.</li>
+    <li><b>Delete</b> the theme. Then the next one.</li>
   </ol>
-  <p class="muted">The live theme of the store is never deleted. If it is on the list, it is tested where it is.</p>
+  <p class="muted">The layout is a store-wide setting, so the tool does not reset it after every theme: one theme goes Vertical, Horizontal, Off-canvas, the next starts where that ended and goes back. The layout is put back to Vertical when the run ends. The live theme of the store is never deleted. If it is on the list, it is tested where it is.</p>
+</section>
+
+<section id="codes">
+  <h2><span class="n">9</span>Bảng mã test và lỗi <small class="muted">(để tra cứu)</small></h2>
+  <p>Mỗi dòng trong báo cáo có một <b>mã test</b> (ví dụ <code>V-10</code>) và một câu <b>"What was found"</b> (tool đã thấy gì). Phần này giải thích mã đó đang kiểm tra phần nào, và từng câu lỗi nghĩa là gì. Các câu lỗi để nguyên tiếng Anh, đúng như tool hiển thị, để bạn tìm theo chữ.</p>
+
+  <h3 style="margin:14px 0 6px">1. Cách đọc mã</h3>
+  <table>
+    <tr><td><b>P-</b></td><td>Panel: bảng "Compatibility issue detected" trong <b>theme editor</b> (chỉ 1 mã: P-01).</td></tr>
+    <tr><td><b>V-</b></td><td>Bộ lọc trên <b>desktop</b>. Chạy ở cả 3 layout: <b>Vertical, Horizontal, Off-canvas</b>.</td></tr>
+    <tr><td><b>O-</b></td><td>Chỉ ở layout <b>Off-canvas</b> (drawer bên phải).</td></tr>
+    <tr><td><b>M-</b></td><td><b>Mobile</b> (màn hình 390px, luôn là drawer).</td></tr>
+    <tr><td><b>S-</b></td><td><b>Search</b> (ô tìm kiếm và widget gợi ý) trên desktop. <b>S-M</b> = search trên mobile.</td></tr>
+    <tr><td><b>G-</b></td><td><b>General</b>: kiểm tra chung, chạy ở mọi layout và mobile.</td></tr>
+  </table>
+  <p class="muted">Trong báo cáo, mỗi mã được ghi kèm layout/viewport nó chạy (ví dụ <code>vertical / desktop</code>). Cùng một mã V-xx có thể đạt ở layout này nhưng lỗi ở layout khác.</p>
+
+  <h3 style="margin:14px 0 6px">2. Trạng thái và mức độ</h3>
+  <table>
+    <tr><td><span class="pill p-pass">PASS</span></td><td>Đạt.</td></tr>
+    <tr><td><span class="pill p-fail">FAIL</span></td><td>Lỗi. "What was found" nói rõ lỗi gì; ảnh chụp đúng lúc đó.</td></tr>
+    <tr><td><span class="pill p-na">REVIEW</span></td><td>Tool không tự quyết được, chỉ chụp ảnh. <b>Người xem phải nhìn ảnh rồi tự tick Pass hoặc Fail</b> (ví dụ S-05; V-04 khi tool không thấy đủ 2 chấm).</td></tr>
+    <tr><td><span class="pill p-na">NA</span></td><td>Không áp dụng: collection này không có phần tử đó (ví dụ không có nhóm gộp, không có thẻ "Choose options"). <b>Không phải lỗi.</b></td></tr>
+    <tr><td><span class="pill p-na">SKIP</span></td><td>Bạn tự đánh "Skip" ở cột Your verdict. Tính như NA.</td></tr>
+    <tr><td><span class="pill p-fail">ERROR</span></td><td>Chính tool bị lỗi khi đo (ví dụ "Pass crashed: ..."). Tính là lỗi; báo developer.</td></tr>
+  </table>
+  <p>Mức độ: <span class="pill p-fail">critical</span> chặn dùng (khách không dùng được tính năng) · <span class="pill p-warn">major</span> lỗi giao diện rõ · <span class="pill p-na">minor</span> lỗi nhỏ. Ngưỡng đang dùng: căn dòng lệch tối đa <b>3px</b>; độ tương phản chữ tối thiểu <b>3:1</b>; widget search lệch độ rộng tối đa <b>10%</b>, cách ô search tối đa <b>12px</b>; chấm slider lệch tối đa <b>2.5px</b>.</p>
+
+  <h3 style="margin:14px 0 6px">3. Từng mã test</h3>
+  <div class="wide"><table class="codes">
+    <thead><tr><th>Mã</th><th>Mức</th><th>Kiểm tra phần nào</th><th>Các câu lỗi và nghĩa của chúng</th></tr></thead>
+    <tr class="grp"><td colspan="4">P: bảng trong theme editor</td></tr>
+    <tr><td>P-01</td><td><span class="pill p-warn">major</span></td><td>Nút <b>X</b> của bảng "Compatibility issue detected" (bật core embed, chưa chọn theme): thấy được, kích thước bình thường, cùng dòng với tiêu đề.</td><td>
+      <span class="e"><q>Close (X) button is not visible on the panel</q>: không thấy nút X.</span>
+      <span class="e"><q>X is too big / too small (WxH px)</q>: X quá to / quá nhỏ.</span>
+      <span class="e"><q>X sits outside the panel</q>: X nằm ngoài bảng.</span>
+      <span class="e"><q>X is Npx off the title line</q>: X lệch khỏi dòng tiêu đề N px.</span>
+      <span class="e"><q>X icon is off-centre in its box</q>: icon X lệch tâm trong ô của nó.</span>
+      <span class="e">NA: bảng không hiện (theme đã được chọn).</span></td></tr>
+
+    <tr class="grp"><td colspan="4">V: bộ lọc desktop (Vertical, Horizontal, Off-canvas)</td></tr>
+    <tr><td>V-01</td><td><span class="pill p-warn">major</span></td><td>2 ô tìm kiếm <q>Search in this collection</q> và <q>Search filter value</q>: icon kính lúp hiện đủ, không đè lên chữ placeholder.</td><td>
+      <span class="e"><q>no magnifier icon</q>: thiếu icon. <q>icon is tiny</q>: icon quá nhỏ.</span>
+      <span class="e"><q>icon touches or overlaps the text (gap Npx)</q>: icon chạm/đè chữ.</span>
+      <span class="e"><q>icon is cropped on the left/right</q>: icon bị cắt một bên.</span>
+      <span class="e"><q>placeholder is cut (Wpx of text in Hpx)</q>: chữ placeholder bị cắt.</span></td></tr>
+    <tr><td>V-02</td><td><span class="pill p-warn">major</span></td><td>Tên giá trị và <b>số đếm</b> (ví dụ "Size 10 (1)") nằm cùng một dòng.</td><td>
+      <span class="e"><q>count is on the next line</q>: số đếm bị rớt xuống dòng.</span>
+      <span class="e"><q>count is Npx above/below the value</q>: số đếm lệch dòng N px. Câu đầu cho biết "N of M counts misaligned" và tên nhóm (Size, Product category, Tag 1...).</span></td></tr>
+    <tr><td>V-03</td><td><span class="pill p-warn">major</span></td><td>Rê chuột vào một giá trị: <b>số đếm vẫn đọc được</b> (không bị đen trên nền đen).</td><td>
+      <span class="e"><q>Count colour ... on hover: contrast N:1 (needs 3:1)</q>: màu số đếm quá gần màu nền khi hover.</span></td></tr>
+    <tr><td>V-04</td><td><span class="pill p-na">minor</span></td><td>Slider <b>Price</b>: 2 chấm tròn nằm đúng giữa đường kẻ. Tool tự mở filter Price rồi đo từ ảnh chụp.</td><td>
+      <span class="e"><q>A dot is Npx away from the middle of the line (limit 2.5px)</q>: chấm lệch N px.</span>
+      <span class="e">REVIEW <q>...slider did not open / its line was not found / could not see both dots. Look at the picture</q>: tool không đo được, hãy nhìn ảnh rồi tự đánh.</span>
+      <span class="e">NA: không có filter Price dạng slider.</span></td></tr>
+    <tr><td>V-05</td><td><span class="pill p-warn">major</span></td><td><b>Mũi tên mở/đóng</b> của nhóm gộp (ví dụ "Tag 1"): thấy được, cùng dòng với checkbox và tên; bấm thì mở/đóng.</td><td>
+      <span class="e"><q>the arrow icon does not show</q>: không thấy mũi tên.</span>
+      <span class="e"><q>the arrow is the same colour as its button, so it cannot be seen</q>: mũi tên trùng màu nút.</span>
+      <span class="e"><q>the arrow button is oversized</q>: nút mũi tên quá to.</span>
+      <span class="e"><q>the arrow / the checkbox is not on the same line as the name (wrapped)</q>: bị rớt dòng.</span>
+      <span class="e"><q>Clicking the arrow did not expand or collapse the group</q>: bấm không xổ/thu được.</span>
+      <span class="e">NA: không có nhóm gộp, hoặc nhóm đang thu gọn nên không đo được.</span></td></tr>
+    <tr><td>V-06</td><td><span class="pill p-warn">major</span></td><td><b>Nút cuộn lên đầu trang</b>: tool cuộn nhanh xuống cuối trang; nút tròn của Findter phải hiện, có mũi tên, và nút của theme không hiện cùng lúc.</td><td>
+      <span class="e"><q>Findter's scroll-to-top button is not visible after scrolling</q>: nút không hiện.</span>
+      <span class="e"><q>Findter button shows only the circle, with no arrow inside</q>: chỉ có vòng tròn, thiếu mũi tên.</span>
+      <span class="e"><q>the arrow is the same colour as the circle</q> / <q>Findter button is tiny</q>.</span>
+      <span class="e"><q>the theme's own scroll-to-top button shows at the same time</q>: nút của theme hiện cùng lúc (2 nút).</span></td></tr>
+    <tr><td>V-07</td><td><span class="pill p-warn">major</span></td><td><b>Checkbox</b> của filter dạng Checklist (ví dụ Product category): ô vuông, cùng dòng với tên và số đếm.</td><td>
+      <span class="e"><q>checkbox is WxHpx (not square)</q>: ô không vuông.</span>
+      <span class="e"><q>count is off the name's line</q> / <q>checkbox is off the name's line</q>: lệch dòng.</span></td></tr>
+    <tr><td>V-08</td><td><span class="pill p-warn">major</span></td><td>Thanh trên lưới sản phẩm: <b>Filter by, Sort by</b> và dropdown sort thẳng hàng, không đè nhau.</td><td>
+      <span class="e"><q>'Sort by' label is missing</q> / <q>sort dropdown is missing</q>: thiếu nhãn / thiếu dropdown.</span>
+      <span class="e"><q>Sort label is Npx off the dropdown line</q> / <q>Filter by and Sort by are not on one line</q>: lệch dòng.</span>
+      <span class="e"><q>sort dropdown overlaps another toolbar element</q>: dropdown đè lên phần tử khác.</span></td></tr>
+    <tr><td>V-09</td><td><span class="pill p-warn">major</span></td><td>Panel <b>"Choose options"</b> trên thẻ sản phẩm: các lựa chọn (pill, swatch) căn giữa; nút Add to cart / View full detail nằm trong thẻ; panel không trong suốt. Chỉ đo nút thật (có viền hoặc nền), không đo dòng chữ mô tả như "Title: Sample Selling Plans".</td><td>
+      <span class="e"><q>"Add to cart" button spills Npx outside the card</q>: nút tràn ra ngoài thẻ N px.</span>
+      <span class="e"><q>option "10": the text is Npx off-centre sideways / vertically</q>: chữ trong lựa chọn lệch tâm.</span>
+      <span class="e"><q>options panel is see-through (opacity N)</q>: panel bị trong suốt.</span>
+      <span class="e">NA: collection không có thẻ "Choose options".</span></td></tr>
+    <tr><td>V-10</td><td><span class="pill p-fail">critical</span></td><td><b>Giá trị được chọn trông như đã chọn</b>: tool bấm 1 giá trị ở từng loại filter (Checklist, Box, Merged) rồi so ảnh trước và sau; ô phải đổi màu hoặc hiện dấu tick.</td><td>
+      <span class="e"><q>"X": the click did not select the value</q>: bấm nhưng không chọn được.</span>
+      <span class="e"><q>"X" was selected but looks the same as before (only 0.0% of its pixels changed): no dark fill or tick</q>: đã chọn nhưng hình y hệt lúc chưa chọn, không có nền tối hay dấu tick. Xem 2 ảnh before / after trước khi kết luận.</span></td></tr>
+    <tr><td>V-11</td><td><span class="pill p-warn">major</span></td><td><b>Chip</b> "Option: value" sau khi chọn: chữ căn giữa, 1 dòng, có icon X.</td><td>
+      <span class="e"><q>chip "..." : parts are Npx apart vertically</q> / <q>text is off the chip's centre</q>: lệch dòng/tâm.</span>
+      <span class="e"><q>chip "..." : no X icon</q>: thiếu icon X.</span></td></tr>
+    <tr><td>V-12</td><td><span class="pill p-warn">major</span></td><td><b>Icon của app</b> (mũi tên dropdown, kính lúp, X, mũi tên cuộn) hiển thị bình thường: không bị phóng to, méo hay thành khối đen.</td><td>
+      <span class="e"><q>"icon" is enlarged (WxHpx, it should be 6 to 40px)</q>: icon quá to.</span>
+      <span class="e"><q>is almost invisible</q> (dưới 6px) · <q>is stretched</q> (méo) · <q>is empty (the icon has no shape)</q> · <q>has no fill and no line, so it cannot be seen</q>.</span>
+      <span class="e">Icon nhỏ như mũi tên 8x5px là bình thường, không bị tính là lỗi.</span></td></tr>
+
+    <tr class="grp"><td colspan="4">O: layout Off-canvas (drawer)</td></tr>
+    <tr><td>O-01</td><td><span class="pill p-warn">major</span></td><td>Nút <b>"Filter by"</b>: thấy được, icon thẳng hàng với chữ.</td><td>
+      <span class="e"><q>'Filter by' button is not visible</q> · <q>icon is missing</q> · <q>icon is Npx off the text</q>.</span></td></tr>
+    <tr><td>O-02</td><td><span class="pill p-fail">critical</span></td><td>Bấm Filter by: <b>drawer</b> bên phải mở ra và có các filter.</td><td>
+      <span class="e"><q>Drawer did not open or shows no filter options</q>: drawer không mở hoặc rỗng.</span></td></tr>
+    <tr><td>O-03</td><td><span class="pill p-warn">major</span></td><td>Nút <b>X đóng drawer</b>: có, kích thước bình thường, icon ở giữa ô.</td><td>
+      <span class="e"><q>Drawer close (X) button is not visible</q> · <q>X box is too big / too small</q> · <q>X icon does not show inside its box</q> · <q>X icon is off-centre in its box (dx, dy)</q> · <q>X icon is bigger than its box</q> · <q>X button is partly off-screen</q>.</span></td></tr>
+    <tr><td>O-04</td><td><span class="pill p-warn">major</span></td><td><b>Price From / To</b> trong drawer hiện đủ, không bị cắt thành "...".</td><td>
+      <span class="e"><q>price field is cut: "..." does not fit</q> · <q>label "..." is cut</q> · <q>label "..." overlaps its field</q> · <q>'From' / 'To' text is not shown</q>.</span></td></tr>
+
+    <tr class="grp"><td colspan="4">M: Mobile</td></tr>
+    <tr><td>M-01</td><td><span class="pill p-fail">critical</span></td><td>Nút <b>"Filter and sort"</b> của Findter hiện, nút Filter/Sort của theme <b>không</b> hiện bên cạnh.</td><td>
+      <span class="e"><q>Findter's 'Filter and sort' button is not visible on mobile</q>: nút Findter không hiện.</span>
+      <span class="e"><q>the theme's own Filter/Sort control is shown next to Findter's</q>: theme hiện nút của nó cùng lúc.</span></td></tr>
+    <tr><td>M-02</td><td><span class="pill p-warn">major</span></td><td><b>Drawer mobile</b>: mở được, nút X đúng chỗ, chữ trong Sort options căn trái.</td><td>
+      <span class="e">Các câu của <b>O-02</b> và <b>O-03</b> (drawer không mở, X lệch...).</span>
+      <span class="e"><q>N sort option(s) are aligned to the right, leaving a gap on the left</q>: chữ Sort căn phải, chừa khoảng trống bên trái.</span></td></tr>
+    <tr><td>M-03</td><td><span class="pill p-warn">major</span></td><td><b>Price From / To</b> trong drawer mobile hiện đủ.</td><td><span class="e">Giống <b>O-04</b>.</span></td></tr>
+    <tr><td>M-04</td><td><span class="pill p-warn">major</span></td><td>Panel <b>"Choose options"</b> trên mobile: giống V-09; thẻ không quá sát nhau, không tràn sang thẻ bên cạnh.</td><td><span class="e">Giống <b>V-09</b>.</span></td></tr>
+
+    <tr class="grp"><td colspan="4">S: Search (desktop; S-M là mobile)</td></tr>
+    <tr><td>S-01</td><td><span class="pill p-fail">critical</span></td><td>Gõ "3" vào ô tìm kiếm của theme: <b>widget gợi ý của Findter hiện</b>, có chữ "Powered by Findter".</td><td>
+      <span class="e"><q>Findter's widget shows but the 'Powered by Findter' watermark is missing</q>: widget có nhưng thiếu watermark.</span>
+      <span class="e"><q>...attached to a hidden copy of the theme's search form...</q>: widget gắn vào một bản sao ẩn của form search nên khách không thấy.</span>
+      <span class="e"><q>...embed is on but its widget did not appear</q>: embed đã bật nhưng widget không hiện.</span>
+      <span class="e"><q>...Search suggestion embed is not active on this theme (its files are not on the page)</q>: embed Search suggestion chưa bật.</span></td></tr>
+    <tr><td>S-02</td><td><span class="pill p-fail">critical</span></td><td>Ô tìm kiếm của <b>theme</b> vẫn dùng được (hiện và gõ được).</td><td>
+      <span class="e"><q>Search bar is not visible or cannot take text</q>.</span>
+      <span class="e"><q>Could not find the theme's search icon, so search could not be opened</q>: không mở được search; câu này làm <b>mọi mã S</b> cùng lỗi.</span></td></tr>
+    <tr><td>S-03</td><td><span class="pill p-warn">major</span></td><td>Chỉ có <b>một</b> hộp gợi ý: widget Findter và hộp gợi ý của theme không hiện cùng lúc.</td><td>
+      <span class="e"><q>Findter's widget and the theme's own suggestion box are shown together</q>: hiện 2 hộp cùng lúc.</span>
+      <span class="e"><q>Only the theme's own suggestion box is shown...</q> / <q>Only the theme's own search layout is shown (Findter's is not)</q>: chỉ thấy của theme.</span>
+      <span class="e">NA <q>Nothing to compare: Findter widget is not showing</q>.</span></td></tr>
+    <tr><td>S-04</td><td><span class="pill p-warn">major</span></td><td>Widget cùng độ rộng với ô search, ngay dưới ô, không bị che, không lệch ngang.</td><td>
+      <span class="e"><q>widget is Wpx wide, search bar Hpx (N% different)</q>: lệch độ rộng quá 10%.</span>
+      <span class="e"><q>widget starts Npx below the search bar</q> / <q>widget overlaps the search bar by Npx</q>: hở/đè lên ô search.</span>
+      <span class="e"><q>widget is covered by another element (for example the header)</q>: bị header che.</span>
+      <span class="e"><q>widget is shifted Npx sideways from the bar</q>: lệch ngang quá 12px.</span></td></tr>
+    <tr><td>S-05</td><td><span class="pill p-warn">major</span></td><td>Widget <b>đứng yên</b>, không tràn ra trang hoặc biến mất khi cuộn.</td><td>
+      <span class="e">Luôn là <span class="pill p-na">REVIEW</span>: <q>Look at the picture: widget stays put and does not expand over the page</q>. Bạn nhìn ảnh rồi tự đánh Pass hoặc Fail.</span></td></tr>
+    <tr><td>S-M1</td><td><span class="pill p-fail">critical</span></td><td>Mobile: <b>template search của Findter</b> hiện, có "Powered by Findter" ở cuối.</td><td><span class="e">Giống <b>S-01</b>.</span></td></tr>
+    <tr><td>S-M2</td><td><span class="pill p-warn">major</span></td><td>Mobile: chỉ có <b>một</b> layout search (của theme không hiện cùng hoặc thay cho Findter).</td><td><span class="e">Giống <b>S-03</b>.</span></td></tr>
+    <tr><td>S-M3</td><td><span class="pill p-warn">major</span></td><td>Mobile: <b>mũi tên quay lại</b> (←) cạnh ô search; bấm thì về trang, không hiện ô search thứ hai.</td><td>
+      <span class="e"><q>No back arrow ('←') next to Findter's search bar</q>: không thấy mũi tên.</span>
+      <span class="e"><q>After tapping the back arrow a second search bar (the theme's) appeared</q>: bấm xong lại hiện ô search của theme.</span></td></tr>
+    <tr><td>S-M4</td><td><span class="pill p-fail">critical</span></td><td>Mobile: ô search <b>dùng được</b> (hiện và gõ được).</td><td><span class="e">Giống <b>S-02</b>.</span></td></tr>
+
+    <tr class="grp"><td colspan="4">G: kiểm tra chung (mọi layout và mobile)</td></tr>
+    <tr><td>G-01</td><td><span class="pill p-fail">critical</span></td><td><b>Findter chạy</b> và có sản phẩm: có khung Findter, thẻ sản phẩm có ảnh và giá, không ảnh lỗi.</td><td>
+      <span class="e"><q>Findter container (#fdt-container) is not on the page</q>: Findter không vẽ gì trên trang.</span>
+      <span class="e"><q>no product cards are visible</q> · <q>collection has no products to show (no data)</q> (collection trống, không phải lỗi của app).</span>
+      <span class="e"><q>no card has an image</q> · <q>N broken image(s)</q> · <q>no card shows a price</q>.</span>
+      <span class="e"><q>Pass crashed: ...</q> (ERROR): tool bị lỗi khi chạy phần này, báo developer.</span></td></tr>
+    <tr><td>G-02</td><td><span class="pill p-warn">major</span></td><td><b>Không cuộn ngang</b> trang.</td><td>
+      <span class="e"><q>page scrolls sideways (Wpx wide in a Hpx window)</q>: trang rộng hơn màn hình.</span></td></tr>
+    <tr><td>G-03</td><td><span class="pill p-warn">major</span></td><td><b>Không có lỗi Findter</b>: không có lỗi JavaScript và không có request Findter bị lỗi (HTTP 400 trở lên).</td><td>
+      <span class="e">Liệt kê tối đa 4 lỗi: lỗi console, lỗi trang, hoặc <q>404 https://...</q> (request nào bị lỗi).</span></td></tr>
+    <tr><td>G-04</td><td><span class="pill p-fail">critical</span></td><td><b>Layout trên màn hình đúng với layout đã đặt</b> ở trang thiết kế của Findter. Nếu sai, các kết quả khác của layout đó không có ý nghĩa.</td><td>
+      <span class="e"><q>expected the horizontal layout but the page shows: vertical. Check Tab 1 (Filter layout saved?) and reload</q>: layout chưa được áp dụng (Save không ăn, hoặc storefront chưa cập nhật). Tool đã tự đợi và tải lại vài lần (khoảng 16 giây) trước khi báo lỗi này.</span></td></tr>
+    <tr><td>G-05</td><td><span class="pill p-fail">critical</span></td><td><b>Storefront mở được</b>, không bị trang mật khẩu của cửa hàng.</td><td>
+      <span class="e"><q>The storefront shows the store password page and no storefront password is configured</q> · <q>...the password page is still showing (wrong password?)</q>: theme bị dừng, chỉ có đúng 1 lỗi này.</span></td></tr>
+  </table></div>
+
+  <h3 style="margin:14px 0 6px">4. Khi cả theme không test được (lỗi setup)</h3>
+  <p>Lúc này Live báo theme <span class="pill p-fail">FAILED</span> và báo cáo chỉ có <b>một</b> lỗi (không có V-, S-... của theme đó). Đây là lý do (<code>reason</code>):</p>
+  <table>
+    <tr><td><code>not_in_theme_store</code></td><td>Tên theme không có trong Shopify Theme Store. Sửa tên trong tab <b>Themes</b>.</td></tr>
+    <tr><td><code>library_full</code></td><td>Kho theme của store đã đầy (tối đa 20 theme).</td></tr>
+    <tr><td><code>install_timeout</code> · <code>install_error</code> · <code>installed_but_not_found</code></td><td>Cài theme quá lâu / Shopify báo lỗi khi cài / cài xong nhưng không thấy trong danh sách.</td></tr>
+    <tr><td><code>not_listed</code> · <code>editor_not_ready</code></td><td>Đợi tối đa 10 phút mà theme không hiện trong danh sách, hoặc editor của nó không mở được.</td></tr>
+    <tr><td><code>theme_is_live</code></td><td>Theme đang là theme live của store. Tool dừng để không đổi cài đặt trên theme đang bán.</td></tr>
+    <tr><td><code>not_in_findter_theme_list</code></td><td>Danh sách Theme list của Findter không có theme này (app chưa hỗ trợ).</td></tr>
+    <tr><td><code>save_not_persisted</code></td><td>Đã bấm Save nhưng tải lại editor thì core hoặc Search suggestion vẫn OFF.</td></tr>
+    <tr><td><code>findter_not_on_storefront</code></td><td>Setup xong nhưng storefront không có Findter (<code>#fdt-container</code>). Tool thử <code>/collections/all</code> rồi các collection trong menu. Nếu chỉ <code>/collections/all</code> không có Findter, tool chạy test trên một collection thật và ghi chú lại.</td></tr>
+    <tr><td><code>storefront_blocked</code></td><td>Gặp trang mật khẩu hoặc bị chặn khi mở storefront (xem G-05).</td></tr>
+    <tr><td><code>theme_run_failed</code></td><td>Lỗi bất ngờ giữa chừng; phần chi tiết ghi lỗi cụ thể.</td></tr>
+    <tr><td><code>theme_not_on_page</code></td><td>Khi <b>xóa</b> theme: không thấy theme trên trang. Không ảnh hưởng kết quả; tool xóa lại ở cuối lần chạy.</td></tr>
+  </table>
+
+  <h3 style="margin:14px 0 6px">5. Đọc kết quả cho đúng</h3>
+  <ul>
+    <li><b>Xem ảnh trước khi kết luận.</b> Mỗi lỗi có ảnh chụp đúng lúc đo; bấm vào ảnh để phóng to.</li>
+    <li><b>Cùng một mã, cùng một câu lỗi ở mọi theme</b> thường là do <b>app Findter</b> hoặc do <b>cách tool đo</b>, không phải do theme. Ví dụ đã thấy ở mọi theme: P-01 <q>X is 141px off the title line</q>, V-04 <q>3px</q> (sát ngưỡng 2.5px), V-10 <q>0.0% of its pixels changed</q>. Hãy xem ảnh rồi tự đánh Pass/Fail; nếu tool đo sai, báo developer để chỉnh.</li>
+    <li><b>Lỗi chỉ ở một theme</b> thường là do theme (ví dụ V-09 nút tràn khỏi thẻ, S-03 hai hộp gợi ý, V-06 hai nút cuộn lên).</li>
+    <li><b>NA không phải lỗi</b>: chỉ có nghĩa là collection thử nghiệm không có phần tử đó.</li>
+    <li>Đã xem và thấy tool đánh sai? Tick <b>verdict của bạn</b> (bước 3): kết quả của tool vẫn được giữ, báo cáo và số liệu theo verdict của bạn.</li>
+  </ul>
 </section>
 
 <section>

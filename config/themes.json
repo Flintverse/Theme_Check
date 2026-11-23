@@ -7,6 +7,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -15,6 +16,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -23,6 +25,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -31,6 +34,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -39,6 +43,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -47,6 +52,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -55,6 +61,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -63,6 +70,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -71,6 +79,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -79,6 +88,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -87,6 +97,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -95,6 +106,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -103,6 +115,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -111,6 +124,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -119,6 +133,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -127,6 +142,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -135,6 +151,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -143,6 +160,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -151,6 +169,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -159,6 +178,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -167,6 +187,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -175,6 +196,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -183,6 +205,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -191,6 +214,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -199,6 +223,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -207,6 +232,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -215,6 +241,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -223,6 +250,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -231,6 +259,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -239,6 +268,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -247,6 +277,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -255,6 +286,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -263,6 +295,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -271,6 +304,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -279,6 +313,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -287,6 +322,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -295,6 +331,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -303,6 +340,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -311,6 +349,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -319,6 +358,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -327,6 +367,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -335,6 +376,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -343,6 +385,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -351,6 +394,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -359,6 +403,7 @@
         "staging",
         "prod"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -366,6 +411,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -373,6 +419,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -380,6 +427,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -387,6 +435,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -394,6 +443,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -401,6 +451,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -408,6 +459,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -415,6 +467,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -422,6 +475,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -429,6 +483,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -436,6 +491,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -443,6 +499,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     },
     {
@@ -450,6 +507,7 @@
       "envs": [
         "staging"
       ],
+      "batch": 1,
       "enabled": true
     }
   ]

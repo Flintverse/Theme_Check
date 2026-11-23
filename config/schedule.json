@@ -4,7 +4,7 @@
   "time": "09:00",
   "weekday": "MON",
   "everyDays": 3,
-  "env": "staging",
+  "env": "prod",
   "batches": "all",
   "mail": true
 }

@@ -89,6 +89,8 @@ function createServer(root, opts) {
       }
       if (req.method === 'GET' && p === '/api/state') return send(res, 200, state());
       if (req.method === 'GET' && p === '/api/progress') return send(res, 200, readProgress(dataDir(root, cfg), url.searchParams.get('env') || undefined) || { running: false, none: true });
+      // the Schedule page: saved settings, the Windows task (next / last run), whether they agree, what runs now and what waits
+      if (req.method === 'GET' && p === '/api/schedule-info') return send(res, 200, sched.info(root, cfg));
       // which stores have a run (running or the last one): the Live page offers a switch between them
       if (req.method === 'GET' && p === '/api/progress-list') return send(res, 200, { runs: readAllProgress(dataDir(root, cfg)).map((x) => ({ env: x.env, runId: x.runId, running: !!x.running, phase: x.phase, updatedAt: x.updatedAt })) });
       // "Run test": the requests (queued, running, finished) and a new one

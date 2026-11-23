@@ -750,7 +750,8 @@ a.brand{color:inherit;text-decoration:none}
     var task = S.task;
     return '<div><h2>Schedule</h2><p class="muted small">How often the full check runs on the test machine. Runs are always the full list, one batch after another.</p></div>' +
       (ro ? '<div class="note">You can look at the schedule but not change it. Editors can change it here, or on the test machine.</div>' : rem ? '<div class="ok">Saving here updates the test machine within about a minute: the Windows scheduled task, the GitHub repository and this page. Times are UTC+7 (the test machine\'s clock).</div>' : '<div class="ok">Save does everything: Windows Task Scheduler, Cloudflare and GitHub follow by themselves. Times are UTC+7 (this machine\'s clock).</div>') +
-      '<div class="card"><div class="row">' +
+      '<div id="si-box">' + siHtml() + '</div>' +
+      '<div class="card" id="sched-form"><h3>Set or change the schedule</h3><div class="row">' +
       '<label class="f">Automatic runs<select id="s-enabled" ' + d + '>' + opt('1', s.enabled ? '1' : '0', 'On') + opt('0', s.enabled ? '1' : '0', 'Off') + '</select></label>' +
       '<label class="f">Frequency<select id="s-mode" ' + d + '>' + opt('daily', s.mode, 'Every day') + opt('weekly', s.mode, 'Every week') + opt('everyNDays', s.mode, 'Every N days') + '</select></label>' +
       '<label class="f" id="w-day">Weekday<select id="s-weekday" ' + d + '>' + ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(function (x) { return opt(x, s.weekday); }).join('') + '</select></label>' +
@@ -760,7 +761,7 @@ a.brand{color:inherit;text-decoration:none}
       '<label class="f">Batches<input type="text" id="s-batches" value="' + esc(s.batches) + '" style="width:110px" placeholder="all or 1,2" ' + d + '></label>' +
       '<label class="f">Mail the result<select id="s-mail" ' + d + '>' + opt('1', s.mail ? '1' : '0', 'Yes') + opt('0', s.mail ? '1' : '0', 'No') + '</select></label>' +
       '</div><p class="small" id="s-desc"><b>' + esc(s.description) + '</b></p>' +
-      '<div class="row"><button class="primary" id="s-save" ' + d + '>Save schedule</button>' + (rem ? '' : '<button class="danger" id="s-remove" ' + d + '>Remove the scheduled task</button>') + '<span id="s-msg" class="small muted"></span></div><div id="save-steps"></div>' +
+      '<div class="row"><button class="primary" id="s-save" ' + d + '>Save schedule</button><span id="s-msg" class="small muted"></span></div><div id="save-steps"></div>' +
       '<p class="small muted">The PC must be on, and the saved Shopify login valid, at the scheduled time. ' + (task && task.registered ? 'Task is registered. Next run: ' + esc(task.nextRun || '?') + '. Last result: ' + esc(task.lastResult || '?') + '.' : 'No Windows task registered yet.') + '</p></div>' +
       (rem ? '' : '<div class="card"><h3>Run now</h3><div class="row"><label class="f">Environment<select id="r-env" ' + d + '>' + S.envs.map(function (e) { return opt(e, s.env); }).join('') + '</select></label>' +
       '<label class="f">Batches<input type="text" id="r-batches" value="all" style="width:110px" ' + d + '></label>' +
@@ -768,7 +769,61 @@ a.brand{color:inherit;text-decoration:none}
       '<button class="primary" id="r-go" ' + (ro || S.running ? 'disabled' : '') + '>Start a run</button><span id="r-msg" class="small muted">' + (S.running ? 'A run is in progress (started ' + esc(tsLocal(S.running.startedAt)) + ' UTC+7' + ').' : '') + '</span></div>' +
       '<p class="small muted">A run opens Chrome windows on this machine and takes hours for the full list. Keep the PC awake and do not use the Shopify admin in that Chrome profile meanwhile.</p><pre id="r-log" class="hide"></pre></div>') + '</div>';
   }
+  /* ---- Schedule: what is registered, what runs now, what is next ---- */
+  var SI = null, siT = null;
+  function untilText(ms) {
+    if (ms < 60000) return 'less than a minute';
+    var m = Math.round(ms / 60000), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
+    return d ? d + 'd ' + h + 'h' : (h ? h + 'h ' + (m % 60) + 'm' : m + 'm');
+  }
+  function siHtml() {
+    if (!SI) return '<div class="card"><h3>Status</h3><p class="muted small" style="margin:0">Loading...</p></div>';
+    if (SI.none || !SI.saved) return '<div class="note">The test machine has not reported its schedule yet. Is the agent running there? (<code>node src/cli.js agent --install</code>)</div>';
+    var s = SI.saved, t = SI.task || {}, ro = isRO();
+    var nextMs = t.registered && t.nextRun ? Date.parse(t.nextRun.replace(' ', 'T') + ':00+07:00') - Date.now() : null;
+    var stale = SI.machineSeen === false ? '<div class="note">The test machine has not reported for ' + untilText((SI.ageSeconds || 0) * 1000) + ': it may be off, or the agent stopped. What you see may be out of date.</div>' : '';
+    var drift = (SI.drift || []).map(function (x) { return '<div class="note">' + esc(x) + '</div>'; }).join('');
+    var run = (SI.running || []).map(function (r) {
+      return '<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding:8px 0"><div><b>' + esc(r.env) + '</b> &middot; ' + r.done + ' of ' + r.total + ' themes &middot; started ' + esc(tsLocal(r.startedAt).slice(5, 16)) + '<div class="small muted">' + esc(r.current || '') + '</div></div><a href="#live" data-live-env="' + esc(r.env) + '">Watch it live</a></div>';
+    }).join('');
+    var que = (SI.queued || []).map(function (r) { return '<div class="small" style="padding:4px 0">Waiting: ' + r.themes + ' theme(s) for <b>' + esc(r.env) + '</b>, asked by ' + esc(r.requestedBy || '?') + ' at ' + esc(tsLocal(r.requestedAt).slice(5, 16)) + '</div>'; }).join('');
+    var off = !s.enabled && !t.registered;
+    return stale +
+      '<div class="kpis">' +
+      kpi('Automatic runs', s.enabled ? 'ON' : 'OFF', s.description, s.enabled ? 'good' : '') +
+      kpi('Windows task', t.registered ? 'Registered' : 'Not registered', t.registered ? (t.status || '') : (s.enabled ? 'nothing will start by itself' : '')) +
+      kpi('Next run', t.registered && t.nextRun ? t.nextRun.slice(5) : '-', t.registered && t.nextRun ? (nextMs > 0 ? 'in ' + untilText(nextMs) + ' (UTC+7)' : 'UTC+7') : (off ? 'none planned' : '')) +
+      kpi('Last run', t.lastRun ? t.lastRun.slice(5) : 'never', t.lastRun ? (t.lastResult === '0' ? 'ended OK' : 'result code ' + t.lastResult) : '') +
+      kpi('Runs', s.env, (s.batches === 'all' ? 'all batches' : 'batches ' + s.batches) + ' &middot; mail ' + (s.mail ? 'yes' : 'no')) +
+      '</div>' + drift +
+      '<div class="card"><h3>Running now</h3>' + (run || '<p class="muted small" style="margin:0">Nothing is running.</p>') + (que ? '<div style="margin-top:8px">' + que + '</div>' : '') + '</div>' +
+      '<div class="card"><div class="row"><button class="primary" data-si="edit">Edit the schedule</button>' +
+      '<button class="danger" data-si="off"' + (ro || off ? ' disabled' : '') + ' title="Removes the Windows task and switches the schedule off. Your settings are kept.">Turn off (remove the Windows task)</button>' +
+      (S.readOnly ? '<a href="#runtest" class="navbtn" style="text-decoration:none">Run a test now</a>' : '<button data-si="run">Run a full test now</button>') +
+      '<span id="si-msg" class="small muted"></span></div></div>';
+  }
+  function siLoad() {
+    clearTimeout(siT);
+    if (TAB !== 'schedule') return;
+    apiGet('/api/schedule-info').then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
+      SI = j; var b = $('si-box'); if (b && TAB === 'schedule') b.innerHTML = siHtml();
+    }).catch(function () {}).then(function () { siT = setTimeout(siLoad, 8000); });
+  }
+  function siClick(e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-si]') : null; if (!b) return;
+    var act = b.getAttribute('data-si');
+    if (act === 'edit') { var f = $('sched-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); var t = $('s-time'); if (t) t.focus(); return; }
+    if (act === 'run') { var r = $('r-go'); if (r && r.closest) r.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (act === 'off') {
+      if (!confirm('Remove the Windows task and switch the schedule off? Nothing will start by itself until you set a new schedule. Your settings are kept.')) return;
+      var s = S.schedule, body = { enabled: false, mode: s.mode, weekday: s.weekday, everyDays: s.everyDays, time: s.time, env: s.env, batches: s.batches, mail: !!s.mail };
+      b.disabled = true;
+      saveConfig({ schedule: body }, 'si-msg', function () { return load().then(function () { SI = null; siLoad(); }); });
+    }
+  }
   function bindSchedule() {
+    siLoad();
+    var box = $('si-box'); if (box) box.onclick = siClick;
     if (isRO()) return;
     function val() {
       return { enabled: $('s-enabled').value === '1', mode: $('s-mode').value, weekday: $('s-weekday').value, everyDays: +$('s-n').value, time: $('s-time').value, env: $('s-env').value, batches: $('s-batches').value.trim() || 'all', mail: $('s-mail').value === '1' };
@@ -776,9 +831,8 @@ a.brand{color:inherit;text-decoration:none}
     function vis() { $('w-day').classList.toggle('hide', $('s-mode').value !== 'weekly'); $('w-n').classList.toggle('hide', $('s-mode').value !== 'everyNDays'); }
     vis(); $('s-mode').onchange = vis;
     function msg(t, bad) { $('s-msg').textContent = t; $('s-msg').style.color = bad ? 'var(--fail)' : 'var(--pass)'; }
-    $('s-save').onclick = function () { saveConfig({ schedule: val() }, 's-msg', function (r) { if (r && r.description) $('s-desc').innerHTML = '<b>' + esc(r.description) + '</b>'; return load(); }); };
+    $('s-save').onclick = function () { saveConfig({ schedule: val() }, 's-msg', function (r) { if (r && r.description) $('s-desc').innerHTML = '<b>' + esc(r.description) + '</b>'; return load().then(function () { SI = null; siLoad(); }); }); };
     if (S.readOnly) return; // the rest only exists on the test machine itself
-    $('s-remove').onclick = function () { if (confirm('Remove the Windows scheduled task? Automatic runs stop.')) api('POST', '/api/schedule/remove').then(function (r) { r.ok ? msg(r.message) : msg(r.error, true); return load(); }); };
     $('r-go').onclick = function () {
       if (!confirm('Start a full run now? It opens Chrome and takes hours.')) return;
       api('POST', '/api/run', { env: $('r-env').value, batches: $('r-batches').value.trim() || 'all', mail: $('r-mail').value === '1' }).then(function () { $('r-msg').textContent = 'Started.'; poll(); }).catch(function (e) { $('r-msg').textContent = e.message; });

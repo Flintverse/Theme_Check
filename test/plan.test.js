@@ -41,14 +41,15 @@ test('a pivot that is not in the list is simply ignored', () => {
   assert.deepStrictEqual(names(plan.rest), ['Atelier']);
 });
 
-test('the pauses between admin actions are generous', () => {
-  assert.ok(DELAYS.afterInstall >= 10000);
-  assert.ok(DELAYS.afterClean >= 10000);
+test('the pauses are quick by default (a step is proved, then given a short pause) and long only for the careful second attempt', () => {
+  const { SLOW } = require('../src/batch');
+  assert.ok(DELAYS.installWait <= 30000 && DELAYS.afterListed <= 15000 && DELAYS.readyPoll <= 15000, 'the theme list is looked at soon and often');
+  assert.ok(DELAYS.readyTimeout >= 300000, 'but it keeps looking for several minutes');
+  ['afterEnable', 'afterThemeList', 'afterSuggestion', 'beforeSave', 'afterSave'].forEach((k) => assert.ok(DELAYS[k] <= 6000, k + ' is a short pause after the step was proved'));
+  assert.ok(DELAYS.findterReady <= 90000, 'the quick look at the storefront is short');
+  ['afterEnable', 'afterThemeList', 'afterSuggestion'].forEach((k) => assert.ok(SLOW[k] >= 20000, k + ' keeps its long pause for the second attempt'));
+  assert.ok(SLOW.findterReady >= 240000);
   assert.ok(DELAYS.afterPublish >= 10000);
-  assert.ok(DELAYS.beforeEdit >= 5000);
-  assert.ok(DELAYS.installWait >= 60000, 'a pause after the install lands, before looking for the theme');
-  assert.ok(DELAYS.afterListed >= 30000, 'a pause once the theme is listed, before its editor is tried');
-  assert.ok(DELAYS.readyPoll >= 20000 && DELAYS.readyTimeout >= 300000, 'it keeps looking for several minutes');
 });
 
 test('one theme at a time: install, wait until usable, test, delete, next (the order of the calls, with stand-ins for the browser)', async () => {
@@ -68,13 +69,19 @@ test('one theme at a time: install, wait until usable, test, delete, next (the o
     norm: (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, ''),
   };
   const installed = [{ id: '1', name: 'Horizon', live: true }];
-  let probes = 0;
+  let opens = 0;
   const fakeEditor = {
-    probeEditor: async () => { probes++; calls.push('probe'); return probes === 1 ? { ok: false, detail: 'not yet' } : { ok: true, detail: '' }; },
-    openEditor: async () => ({}), enableCore: async () => '', checkCompatPanel: async () => ({ id: 'P-01', layout: 'panel', status: 'na', detail: '', shots: [] }),
-    chooseThemeAndSave: async () => ({ ok: true, steps: [] }), getPreviewUrl: async () => ({ url: 'https://x', cookies: [], via: 'fake' }), exitEditor: async () => {},
+    probeEditor: async () => { calls.push('probe'); return { ok: true, detail: '' }; },
+    // the first editor open of the first theme fails once: it is tried again by itself
+    openEditor: async () => { opens++; if (opens === 1) throw new Error('theme editor did not load'); calls.push('open-editor'); return {}; },
+    enableCore: async () => '', checkCompatPanel: async () => ({ id: 'P-01', layout: 'panel', status: 'na', detail: '', shots: [] }),
+    saveSetup: async (ed, name) => { calls.push('quick-setup ' + name); return { ok: true, steps: ['saved'] }; },
+    verifySaved: async (ed, name) => { calls.push('verify ' + name); return name === 'Craft' ? { ok: false, text: 'read back: core OFF' } : { ok: true, text: 'read back: ok' }; },
+    chooseThemeAndSave: async (ed, name) => { calls.push('slow-setup ' + name); return { ok: true, steps: [] }; },
+    getPreviewUrl: async () => ({ url: 'https://x', cookies: [], via: 'fake' }), exitEditor: async () => {},
   };
-  const fakeDesign = { openDesign: async () => ({}), setLayout: async () => {} };
+  const layoutCalls = [];
+  const fakeDesign = { openDesign: async () => ({ frame: {} }), readLayout: async () => 'vertical', setLayout: async (d, l) => { layoutCalls.push(l); } };
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-flow-'));
   ['checklist'].forEach((d) => fs.cpSync(path.join(__dirname, '..', d), path.join(root, d), { recursive: true }));
   const real = Module._load;
@@ -92,14 +99,23 @@ test('one theme at a time: install, wait until usable, test, delete, next (the o
   delete require.cache[require.resolve('../src/batch')];
   try {
     const { runBatches } = require('../src/batch');
-    const cfg = { envs: { staging: { shop: 's', adminHandle: 'h', themeStoreShop: 'h' } }, viewports: { desktop: {}, mobile: {} }, thresholds: {}, delays: { afterInstall: 1, afterClean: 1, beforeEdit: 1, afterExit: 1, installWait: 1, afterListed: 1, readyPoll: 1, readyTimeout: 5000 }, archive: {} };
+    const cfg = { envs: { staging: { shop: 's', adminHandle: 'h', themeStoreShop: 'h' } }, viewports: { desktop: {}, mobile: {} }, thresholds: {}, delays: { afterInstall: 1, afterClean: 1, beforeEdit: 1, afterExit: 1, installWait: 1, afterListed: 1, readyPoll: 1, readyTimeout: 5000, editorRetry: 1 }, archive: {} };
     const list = [{ name: 'Dawn', batch: 1 }, { name: 'Craft', batch: 1 }];
     const { run } = await runBatches({ root, cfg, envName: 'staging', themeList: list, checklist: require('../checklist/checklist.json'), opts: { label: 'unit' } });
     const order = calls.filter((c) => c !== 'list');
     const at = (x) => order.indexOf(x);
     assert.ok(at('install Dawn') < at('delete 101'), 'Dawn is deleted after it is installed');
     assert.ok(order.indexOf('delete 101') < order.indexOf('install Craft'), 'the next theme is installed only after the previous one is deleted');
-    assert.strictEqual(order.filter((c) => c === 'probe').length, 3, 'the first look said "not yet", so it waited and looked again; Craft was ready at once');
+    assert.strictEqual(order.filter((c) => c === 'probe').length, 0, 'the editor is not opened twice any more: the open for the test is the check, and it is retried by itself');
+    assert.strictEqual(order.filter((c) => c === 'open-editor').length, 2, 'Dawn\'s first open failed and was tried again; Craft opened at once');
+    // quick first, careful only when the quick pass did not show everything on
+    assert.ok(order.includes('quick-setup Dawn') && order.includes('quick-setup Craft'));
+    assert.ok(!order.includes('slow-setup Dawn'), 'Dawn checked out on the quick pass');
+    assert.ok(at('verify Craft') < at('slow-setup Craft'), 'Craft\'s read-back said core OFF: the setup is repeated slowly');
+    assert.ok(run.themes[1].setup.steps.some((x) => /repeated slowly/.test(x)));
+    assert.ok(run.themes[0].setup.timings && typeof run.themes[0].setup.timings.saved === 'number', 'the time of each milestone is recorded');
+    // the layout is a store-wide setting: Dawn goes vertical > horizontal > off-canvas, Craft starts where Dawn ended and goes back
+    assert.deepStrictEqual(layoutCalls, ['horizontal', 'offcanvas', 'horizontal', 'vertical'], 'two switches per theme (it was four), and the store ends on Vertical');
     assert.ok(!order.includes('delete 1'), 'the live theme is never deleted');
     assert.deepStrictEqual(run.themes.map((t) => t.name), ['Dawn', 'Craft']);
     assert.ok(/-unit$/.test(run.runId), 'the label is in the run id');

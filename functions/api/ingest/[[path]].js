@@ -15,7 +15,7 @@
 //   POST /api/ingest/run-requests/<id>    the test machine reports what became of one request (queued, running, done...)
 import { json, isAuthorized, cleanKey, typeFor, validateConfig } from '../../../cf/lib.js';
 
-const LIMITS = { progress: 1e6, state: 20e6, media: 15e6, config: 2e6, 'config-status': 1e5 };
+const LIMITS = { progress: 1e6, state: 20e6, media: 15e6, config: 2e6, 'config-status': 1e5, 'schedule-info': 2e5 };
 
 async function handle({ request, env, params }) {
   if (!isAuthorized(request, env)) return json({ error: 'unauthorized' }, 401);
@@ -88,7 +88,7 @@ async function handle({ request, env, params }) {
     return obj ? new Response(obj.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : json({ rev: 0, items: {} });
   }
 
-  if (kind === 'progress' || kind === 'state' || kind === 'config' || kind === 'config-status') {
+  if (kind === 'progress' || kind === 'state' || kind === 'config' || kind === 'config-status' || kind === 'schedule-info') {
     if (request.method !== 'POST' && request.method !== 'PUT') return json({ error: 'not found' }, 404);
     const text = await request.text();
     if (text.length > LIMITS[kind]) return json({ error: 'too large' }, 413);

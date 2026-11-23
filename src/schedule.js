@@ -75,12 +75,60 @@ function removeSchedule() {
   return r.status === 0 || /cannot find|does not exist/i.test(r.stderr || '') ? { ok: true, message: 'Task removed (or was not there).' } : { ok: false, error: (r.stderr || '').trim() };
 }
 
-function queryTask() {
+function queryTask(name) {
   if (process.platform !== 'win32') return { registered: false, note: 'Windows only' };
-  const r = spawnSync('schtasks', ['/Query', '/TN', TASK, '/FO', 'LIST'], { encoding: 'utf8' });
+  const r = spawnSync('schtasks', ['/Query', '/TN', name || TASK, '/V', '/FO', 'LIST'], { encoding: 'utf8' });
   if (r.status !== 0) return { registered: false };
   const pick = (k) => (new RegExp(`^${k}:\\s*(.*)$`, 'mi').exec(r.stdout) || [])[1];
-  return { registered: true, nextRun: pick('Next Run Time'), status: pick('Status'), lastRun: pick('Last Run Time'), lastResult: pick('Last Result') };
+  return { registered: true, nextRun: pick('Next Run Time'), status: pick('Status'), lastRun: pick('Last Run Time'), lastResult: pick('Last Result'), command: pick('Task To Run') };
+}
+
+// "11/26/2026 9:00:00 AM" (what schtasks prints on this PC) or "26/11/2026 09:00:00" -> "2026-11-26 09:00". The PC's clock is UTC+7
+// (README), so the text is already in the time the dashboard uses. Anything else (N/A, a task that never ran) -> null.
+function parseTaskTime(s) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})[ ,]+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i.exec(String(s || '').trim());
+  if (!m) return null;
+  let a = +m[1], b = +m[2], h = +m[4];
+  const [month, day] = a > 12 ? [b, a] : [a, b]; // US month/day, or day/month when the first number cannot be a month
+  if (m[6]) { h = h % 12 + (/pm/i.test(m[6]) ? 12 : 0); }
+  if (+m[3] < 2001) return null; // 11/30/1999: Windows' "never ran"
+  const p = (n) => String(n).padStart(2, '0');
+  return `${m[3]}-${p(month)}-${p(day)} ${p(h)}:${m[5]}`;
+}
+
+// What the registered task will really run (from the launcher file the task starts): the store, the batches, the mail.
+function registeredFor(root) {
+  try {
+    const txt = fs.readFileSync(launcherPath(root), 'utf8');
+    const line = txt.split(/\r?\n/).find((l) => /cli\.js run /.test(l));
+    if (!line) return null;
+    return { env: (/--env (\S+)/.exec(line) || [])[1] || '', batches: (/--batches (\S+)/.exec(line) || [])[1] || 'all', mail: /--mail\b/.test(line) };
+  } catch (e) { return null; }
+}
+
+// Everything the Schedule page shows: the saved settings, the Windows task (next / last run), whether the two agree, what is running
+// now and what waits. `queryFn` / `progress` / `queue` are injectable for tests.
+function info(root, cfg, opts) {
+  const o = Object.assign({ queryFn: queryTask, progress: null, queue: null }, opts);
+  const saved = Object.assign({}, loadSchedule(root));
+  saved.description = describe(saved);
+  const t = o.queryFn() || { registered: false };
+  const task = { registered: !!t.registered, status: t.status || '', nextRun: parseTaskTime(t.nextRun), lastRun: parseTaskTime(t.lastRun), lastResult: t.lastResult === undefined ? '' : String(t.lastResult), runs: t.registered ? registeredFor(root) : null };
+  const drift = [];
+  if (saved.enabled && !task.registered) drift.push('The schedule is saved as On, but no Windows task is registered, so nothing will start by itself. Press Save schedule to register it.');
+  if (!saved.enabled && task.registered) drift.push('The schedule is saved as Off, but a Windows task is still registered (next run ' + (task.nextRun || '?') + '). Press Turn off to remove it.');
+  if (saved.enabled && task.registered && task.runs) {
+    const diff = [];
+    if (task.runs.env && task.runs.env !== saved.env) diff.push('store ' + task.runs.env + ' (saved: ' + saved.env + ')');
+    if (task.runs.batches !== String(saved.batches)) diff.push('batches ' + task.runs.batches + ' (saved: ' + saved.batches + ')');
+    if (task.runs.mail !== !!saved.mail) diff.push('mail ' + (task.runs.mail ? 'yes' : 'no') + ' (saved: ' + (saved.mail ? 'yes' : 'no') + ')');
+    if (diff.length) drift.push('The registered task does not match the saved settings: it runs ' + diff.join(', ') + '. Press Save schedule to apply the saved settings.');
+  }
+  const prog = o.progress || (() => { try { return require('./store/progress').readAllProgress(require('./store/paths').dataDir(root, cfg)); } catch (e) { return []; } })();
+  const running = prog.filter((p) => p.running).map((p) => ({ env: p.env, runId: p.runId, startedAt: p.startedAt, done: (p.counts && p.counts.done) || 0, total: (p.counts && p.counts.total) || (p.themes || []).length, current: p.current ? p.current.theme + (p.current.step ? ' - ' + p.current.step : '') : (p.step || p.phase || '') }));
+  const queue = o.queue || (() => { try { return require('./run-queue').list(root); } catch (e) { return []; } })();
+  const queued = queue.filter((r) => r.status === 'queued').map((r) => ({ id: r.id, env: r.env, themes: (r.themes || []).length, requestedBy: r.requestedBy, requestedAt: r.requestedAt }));
+  return { at: new Date().toISOString(), saved, task, inSync: drift.length === 0, drift, running, queued };
 }
 
 function saveSchedule(root, s) {
@@ -88,4 +136,4 @@ function saveSchedule(root, s) {
   fs.writeFileSync(fileFor(root), JSON.stringify(s, null, 2));
 }
 
-module.exports = { launcherPath, writeLauncher, taskCommand, loadSchedule, saveSchedule, validate, describe, runCommand, schtasksArgs, applySchedule, removeSchedule, queryTask, DEFAULT, DAYS, TASK };
+module.exports = { launcherPath, writeLauncher, taskCommand, loadSchedule, saveSchedule, validate, describe, runCommand, schtasksArgs, applySchedule, removeSchedule, queryTask, parseTaskTime, registeredFor, info, DEFAULT, DAYS, TASK };

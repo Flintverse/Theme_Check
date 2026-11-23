@@ -51,11 +51,9 @@
   },
   "batchSize": 15,
   "delays": {
-    "afterInstall": 12000,
-    "afterClean": 10000,
-    "beforeEdit": 6000,
-    "afterExit": 4000,
-    "afterPublish": 15000,
-    "installWait": 180000
-  }
+    "installWait": 20000,
+    "afterListed": 8000,
+    "readyPoll": 10000
+  },
+  "delaysNote": "Only set a value here to change the built-in quick defaults (src/batch.js DELAYS). The long pauses of the careful second attempt are fixed in the code (SLOW)."
 }

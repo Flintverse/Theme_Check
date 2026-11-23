@@ -24,14 +24,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const T = require('./lib/time');
 const stamp = () => T.today(); // the day in UTC+7
 
-// Pauses between actions. Generous on purpose: Shopify's admin is slow to settle after an install, a delete or a publish.
-// One theme at a time: install, wait until it shows up and can be edited, test, delete, next. The waits are generous on purpose.
-//   installWait  = pause after the install lands, before looking for the theme
-//   readyPoll    = how often the theme list is read while waiting; readyTimeout = how long to wait at most
-//   afterListed  = extra pause once the theme is listed, before its editor is tried
-const DELAYS = { afterInstall: 20000, afterClean: 15000, beforeEdit: 6000, afterExit: 4000, afterPublish: 15000, installWait: 90000, afterListed: 45000, readyPoll: 30000, readyTimeout: 600000,
-  // in the theme editor: time for every switch to apply, and for Findter to show on the storefront, before any test
-  afterEnable: 25000, afterThemeList: 25000, afterSuggestion: 30000, beforeSave: 10000, afterSave: 20000, findterReady: 240000 };
+// Pauses between actions. Quick by default: a step is PROVED (a button changes, a theme shows in the list, Findter shows on the storefront)
+// and only given a short pause after that. If the quick first attempt does not end with Findter on the storefront, the editor setup
+// is repeated once with the long pauses of SLOW (what the tool used before), so a slow Shopify costs a few minutes but not a failure.
+//   installWait  = first look at the theme list after the install lands; readyPoll = how often it is looked at after that
+//   afterListed  = short pause once the theme is listed, before its editor is opened (the editor open is retried by itself)
+const DELAYS = { afterInstall: 4000, afterClean: 4000, beforeEdit: 1500, afterExit: 1500, afterPublish: 15000, installWait: 20000, afterListed: 8000, readyPoll: 10000, readyTimeout: 600000, editorRetry: 20000,
+  // in the theme editor: a short pause after every switch that has been proved, and the quick wait for Findter on the storefront
+  afterEnable: 4000, afterThemeList: 5000, afterSuggestion: 5000, beforeSave: 3000, afterSave: 5000, idleSettle: 1200, findterReady: 60000 };
+const SLOW = { afterEnable: 25000, afterThemeList: 25000, afterSuggestion: 30000, beforeSave: 10000, afterSave: 20000, idleSettle: 2500, findterReady: 240000 };
 
 function saveRun(runDir, run, checklist, prev) {
   fs.mkdirSync(runDir, { recursive: true });
@@ -55,9 +56,18 @@ function planRun(themeList, env, size) {
   return { pivots, rest, batches };
 }
 
-async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, runDir, designPage, log, prog, delays, partial }) {
+async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, runDir, designPage, layoutState, log, prog, delays, partial }) {
   const key = keyOf(theme.name);
   const out = { name: theme.name, id: themeId, passes: [], setup: {} };
+  const slow = Object.assign({}, delays, SLOW);
+  const T0 = Date.now();
+  out.setup.timings = {}; // seconds since this theme started, one per milestone: shows where the time goes
+  const mark = (k) => { out.setup.timings[k] = Math.round((Date.now() - T0) / 1000); };
+  const ls = layoutState || { cur: null };
+  // The layout is a store-wide setting. Keep it where the last theme left it: odd themes go vertical > horizontal > off-canvas, the
+  // next one starts at off-canvas and goes the other way. That is two switches per theme instead of four.
+  const need = async (l) => { if (ls.cur === l) return; ls.cur = null; await design.setLayout(designPage, l); ls.cur = l; };
+  const reverse = ls.cur === 'offcanvas';
   const outDir = runDir;
   let ed = null;
   const step = (status, text) => { prog.setTheme(theme.name, { status, step: text }); };
@@ -68,38 +78,61 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
   };
   const blocked = (passes) => passes.find((p) => p.blocked);
   try {
-    // ---- Tab 1: Vertical first
+    // ---- Tab 1: the first layout of this theme (nothing to do when the store is already on it)
     // not counted in the Time column: the clock starts when the theme editor is opened (status 'setup' below)
-    step('preparing', 'Tab 1: setting the Vertical layout');
-    await design.setLayout(designPage, 'vertical');
-    // ---- Tab 2: editor
+    step('preparing', 'Tab 1: setting the ' + (reverse ? 'Off-canvas' : 'Vertical') + ' layout');
+    await need(reverse ? 'offcanvas' : 'vertical');
+    mark('layoutReady');
+    // ---- Tab 2: editor (opening it is tried up to 3 times: a theme that was just installed can need a moment)
     await sleep(delays.beforeEdit);
     step('setup', 'Tab 2: opening the theme editor');
-    ed = await editor.openEditor(ctx, env, themeId);
+    for (let tries = 1; ; tries++) {
+      try { ed = await editor.openEditor(ctx, env, themeId); break; }
+      catch (e) {
+        if (e.reason === 'theme_is_live' || tries >= 3) throw e;
+        log(`  ${theme.name}: the editor did not open (${String(e.message).split(/[\r\n]/)[0].slice(0, 80)}), trying again in ${Math.round(delays.editorRetry / 1000)} s`);
+        await sleep(delays.editorRetry);
+      }
+    }
+    mark('editorOpen');
     step('setup', 'Tab 2: turning on the Search & filter core embed');
     out.setup.core = await editor.enableCore(ed, delays);
+    mark('coreOn');
     step('setup', 'Tab 2: checking the Compatibility panel');
     const panel = await editor.checkCompatPanel(ed, outDir, `${key}/panel`, cfg.thresholds);
+    mark('compatPanel');
     step('setup', 'Tab 2: choosing the theme in Theme list, turning on Search suggestion, saving');
-    const chosen = await editor.chooseThemeAndSave(ed, theme.name, delays);
-    out.setup.steps = chosen.steps;
-    if (!chosen.ok) { out.setupFailed = { reason: chosen.reason, detail: chosen.detail }; return out; }
+    const saved = await editor.saveSetup(ed, theme.name, delays);
+    out.setup.steps = saved.steps;
+    if (!saved.ok) { out.setupFailed = { reason: saved.reason, detail: saved.detail }; return out; }
+    mark('saved');
     // ---- Tab 3: Preview from the editor
     step('setup', 'Tab 2: opening Preview (Tab 3)');
     const prev = await editor.getPreviewUrl(ed, env, themeId);
     out.setup.previewVia = prev.via;
     prog.event(`${theme.name}: Tab 3 opened via ${prev.via}`);
     add({ layout: 'panel', viewport: 'desktop', results: [panel] });
-    // Before any test: is Findter really on the storefront of this theme? If not, do the editor setup once more and look again.
+    mark('preview');
+    // Before any test: is Findter really on the storefront of this theme? The editor is reloaded to read the switches back WHILE the
+    // storefront is looked at (two separate checks, done at the same time). If either fails, the editor setup is done once more,
+    // slowly, and the storefront is looked at again.
     const storefrontPassword = env.storefrontPassword || process.env[`STOREFRONT_PASSWORD_${envName(env)}`];
     step('setup', 'Waiting until Findter shows on the storefront (everything must be ON before testing)');
-    let ready = await waitFindter({ browser, url: prev.url, cookies: prev.cookies, password: storefrontPassword, maxMs: delays.findterReady });
-    if (!ready.ok && !ready.blocked) {
-      log(`  ${theme.name}: Findter is not on the storefront yet (${ready.detail}). Doing the editor setup once more.`);
-      step('setup', 'Findter is not on the storefront: doing the editor setup once more');
-      const again = await editor.chooseThemeAndSave(ed, theme.name, delays);
-      out.setup.steps = (out.setup.steps || []).concat(['the storefront check failed, setup repeated'], again.steps || []);
-      ready = await waitFindter({ browser, url: prev.url, cookies: prev.cookies, password: storefrontPassword, maxMs: delays.findterReady });
+    const look = (o) => waitFindter(Object.assign({ browser, url: prev.url, cookies: prev.cookies, password: storefrontPassword }, o));
+    const [back, firstLook] = await Promise.all([
+      editor.verifySaved(ed, theme.name, delays).catch((e) => ({ ok: false, text: 'read back failed: ' + String(e.message).slice(0, 80) })),
+      look({ maxMs: delays.findterReady, selectorMs: 8000, pollMs: 4000 }),
+    ]);
+    let ready = firstLook;
+    out.setup.steps = (out.setup.steps || []).concat([back.text]);
+    mark('verified');
+    if (!(back.ok && ready.ok) && !ready.blocked) {
+      log(`  ${theme.name}: not everything checked out on the quick pass (${back.ok ? '' : back.text + '; '}${ready.ok ? '' : ready.detail}). Doing the editor setup once more, slowly.`);
+      step('setup', 'Not everything is on yet: doing the editor setup once more, with longer pauses');
+      const again = await editor.chooseThemeAndSave(ed, theme.name, slow);
+      out.setup.steps = (out.setup.steps || []).concat(['the quick pass did not show everything on, setup repeated slowly'], again.steps || []);
+      ready = await look({ maxMs: slow.findterReady });
+      mark('slowPath');
     }
     if (!ready.ok) { out.setupFailed = { reason: ready.blocked ? 'storefront_blocked' : 'findter_not_on_storefront', detail: ready.detail }; return out; }
     out.setup.storefrontReady = `Findter showed on the storefront (look ${ready.looks})`;
@@ -107,33 +140,43 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
 
     const common = { browser, url: prev.url, outDir, thresholds: cfg.thresholds, keyword: cfg.keyword, cookies: prev.cookies, password: env.storefrontPassword || process.env[`STOREFRONT_PASSWORD_${envName(env)}`] };
     const P = (layout, viewportName, rel) => runPass(Object.assign({}, common, { layout, viewportName, viewport: cfg.viewports[viewportName], relDir: `${key}/${rel}` }));
-    // The passes that do not depend on each other run at the same time (separate browser contexts): the search passes work
-    // with any layout, and mobile is always off-canvas. Layout changes themselves stay one after the other.
-    log(`  ${theme.name}: vertical + search (desktop and mobile)`);
-    step('testing', 'Checking vertical layout, search desktop and search mobile (at the same time)');
-    let group = await Promise.all([P('vertical', 'desktop', 'vertical-desktop'), P('search', 'desktop', 'search-desktop'), P('search', 'mobile', 'search-mobile')]);
+    // The passes that do not depend on each other run at the same time (separate browser contexts): the search passes work with any
+    // layout, and mobile is always off-canvas. Layout changes themselves stay one after the other.
+    const first = reverse
+      ? [P('offcanvas', 'desktop', 'offcanvas-desktop'), P('mobile', 'mobile', 'mobile'), P('search', 'desktop', 'search-desktop')]
+      : [P('vertical', 'desktop', 'vertical-desktop'), P('search', 'desktop', 'search-desktop'), P('search', 'mobile', 'search-mobile')];
+    const lastG = () => (reverse
+      ? [P('vertical', 'desktop', 'vertical-desktop'), P('search', 'mobile', 'search-mobile')]
+      : [P('offcanvas', 'desktop', 'offcanvas-desktop'), P('mobile', 'mobile', 'mobile')]);
+    log(`  ${theme.name}: ${reverse ? 'off-canvas + mobile + search' : 'vertical + search (desktop and mobile)'}`);
+    step('testing', reverse ? 'Checking off-canvas, mobile and search desktop (at the same time)' : 'Checking vertical layout, search desktop and search mobile (at the same time)');
+    let group = await Promise.all(first);
     group.forEach(add);
+    mark('firstGroup');
     if (blocked(group)) throw Object.assign(new Error(blocked(group).blocked), { reason: 'storefront_blocked' });
 
     log(`  ${theme.name}: horizontal`);
     step('setup', 'Tab 1: switching to horizontal, then reloading Tab 3');
-    await design.setLayout(designPage, 'horizontal');
+    await need('horizontal');
+    mark('horizontalSet');
     step('testing', 'Checking the horizontal layout (desktop)');
     group = [await P('horizontal', 'desktop', 'horizontal-desktop')];
     group.forEach(add);
+    mark('horizontalDone');
 
-    log(`  ${theme.name}: off-canvas + mobile`);
-    step('setup', 'Tab 1: switching to off-canvas, then reloading Tab 3');
-    await design.setLayout(designPage, 'offcanvas');
-    step('testing', 'Checking off-canvas (desktop) and mobile (at the same time)');
-    group = await Promise.all([P('offcanvas', 'desktop', 'offcanvas-desktop'), P('mobile', 'mobile', 'mobile')]);
+    log(`  ${theme.name}: ${reverse ? 'vertical + search mobile' : 'off-canvas + mobile'}`);
+    step('setup', 'Tab 1: switching to ' + (reverse ? 'vertical' : 'off-canvas') + ', then reloading Tab 3');
+    await need(reverse ? 'vertical' : 'offcanvas');
+    mark('lastSet');
+    step('testing', reverse ? 'Checking vertical and search mobile (at the same time)' : 'Checking off-canvas (desktop) and mobile (at the same time)');
+    group = await Promise.all(lastG());
     group.forEach(add);
+    mark('lastDone');
   } catch (e) {
     out.setupFailed = out.setupFailed || { reason: e.reason || 'theme_run_failed', detail: String(e.message).slice(0, 240) };
   } finally {
-    // end of each theme: Tab 1 back to Vertical, Tab 2 Exit
-    prog.setTheme(theme.name, { step: 'Tab 1: putting the layout back to Vertical, leaving the editor' });
-    try { await design.setLayout(designPage, 'vertical'); } catch (e) { out.setup.restoreFailed = String(e.message).slice(0, 160); }
+    // end of each theme: Tab 2 Exit (the layout stays: the next theme starts from it)
+    prog.setTheme(theme.name, { step: 'Leaving the editor' });
     if (ed) await editor.exitEditor(ed, env).catch(() => {});
     await sleep(delays.afterExit);
   }
@@ -174,6 +217,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   const browser = await chromium.launch({ channel: channelOf(opts.browser), headless: true });
   ctxRef = ctx; browserRef = browser;
   let designPage = null;
+  const layoutState = { cur: null }; // the store-wide layout as the tool last set it (or read it): a theme starts from where the last one ended
   const dbg = path.join(runDir, '_debug');
   const keepNames = env.keepThemes || env.pivots || []; // never deleted, even as drafts (Horizon: the store's base theme)
   let liveInfo = null; // the published theme of the store: never deleted, never changed unless it is the theme to test
@@ -182,7 +226,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
     log(` Testing ${t.name}`);
     const keep = (o) => { const i = run.themes.findIndex((x) => x.name === o.name); if (i < 0) run.themes.push(o); else run.themes[i] = o; };
     const partial = (o) => { keep(o); saveRun(runDir, run, checklist, prev); };
-    keep(await testTheme({ ctx, browser, env: asEnv || env, cfg, checklist, theme: t, themeId: id, runDir, designPage, log, prog, delays, partial }));
+    keep(await testTheme({ ctx, browser, env: asEnv || env, cfg, checklist, theme: t, themeId: id, runDir, designPage, layoutState, log, prog, delays, partial }));
     saveRun(runDir, run, checklist, prev); // after every theme, so a crash keeps what was done
   };
   // install one theme from the Theme Store; returns its id or null (and records the failure)
@@ -212,13 +256,12 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
       const lib = await themesApi.listThemes(ctx, env).catch(() => []);
       listed = lib.some((x) => x.id === id && x.name);
       if (listed) {
-        prog.setTheme(t.name, { step: 'Shown in the theme list. Checking that its editor opens...' });
+        // A short pause, then on. The editor is opened for the test itself (that open is tried up to 3 times), so it is not opened
+        // twice: that is what the separate "does the editor open" probe used to cost, about 20 s per theme.
+        prog.setTheme(t.name, { step: 'Shown in the theme list. Opening its editor next' });
         await sleep(delays.afterListed);
-        const probe = await editor.probeEditor(ctx, env, id);
-        if (probe.ok) { log(`  ${t.name}: ready, it is listed and its editor opens (look ${n})`); return { ok: true }; }
-        lastDetail = probe.detail;
-        log(`  ${t.name}: listed, but not editable yet (${probe.detail})`);
-        prog.setTheme(t.name, { step: 'Not editable yet: ' + probe.detail });
+        log(`  ${t.name}: ready, it is listed (look ${n})`);
+        return { ok: true };
       } else {
         lastDetail = 'not in the theme list';
         prog.setTheme(t.name, { step: 'Not in the theme list yet, looking again soon...' });
@@ -231,7 +274,8 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   try {
     prog.setPhase('login', 'Opening the Findter design page (Tab 1)');
     designPage = await design.openDesign(ctx, env);
-    liveInfo = await themesApi.liveTheme(ctx, env);
+    layoutState.cur = await design.readLayout(designPage.frame).catch(() => null);
+    liveInfo =await themesApi.liveTheme(ctx, env);
     log(`Live theme at the start: ${liveInfo ? liveInfo.name : '(none found)'}. It is never deleted.`);
     if (!liveInfo) throw new Error('No live (published) theme was found, so nothing is installed or deleted.');
 
@@ -282,6 +326,8 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
     prog.finish('failed');
     throw e;
   } finally {
+    // the layout is the store's setting, not the tool's: put it back to Vertical when the run ends (the themes no longer do it one by one)
+    if (designPage && layoutState.cur !== 'vertical') { try { await design.setLayout(designPage, 'vertical'); } catch (e) { log('Could not put the layout back to Vertical: ' + String(e.message).slice(0, 120)); } }
     await browser.close().catch(() => {});
     await ctx.close().catch(() => {});
     require('./lib/browser').markCleanExit(profileDirFor(root, envKey, opts.browser));
@@ -332,4 +378,4 @@ async function runOnUrl({ root, cfg, url, name, layouts, checklist }) {
   return { run, runDir };
 }
 
-module.exports = { runBatches, runOnUrl, saveRun, planRun, DELAYS };
+module.exports = { runBatches, runOnUrl, saveRun, planRun, DELAYS, SLOW };

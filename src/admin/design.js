@@ -49,7 +49,7 @@ async function setLayout(design, key) {
     if (!save) throw new Error('Changed the layout but no Save button appeared (looked in the app frame and the admin top bar).');
     await save.click();
     for (let i = 0; i < 40 && (await save.count().catch(() => 0)) > 0 && (await save.isEnabled().catch(() => false)); i++) await page.waitForTimeout(500);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(800);
   }
   await page.reload({ waitUntil: 'domcontentloaded' });
   await frame.getByRole('checkbox', { name: 'Vertical' }).first().waitFor({ timeout: 60000 });

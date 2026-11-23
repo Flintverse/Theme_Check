@@ -178,13 +178,20 @@ async function checkSelectedState(p) {
     const before = await page.screenshot({ clip: { x: Math.max(0, box.x), y: Math.max(0, box.y), width: Math.min(box.width, 400), height: box.height } }).catch(() => null);
     const s1 = await p.shot('V-10-' + kind + '-before-click');
     await item.locator('label, .search-filters__filter-option-item-label').first().click({ force: true, timeout: 4000 }).catch(() => item.click({ force: true }));
-    await page.waitForTimeout(2200);
+    await page.waitForTimeout(1800);
     // the group is drawn again after a click (so its marker is gone): look the value up by its text among the visible values
-    const again = page.locator('#fdt-container li:visible').filter({ hasText: text }).filter({ has: page.locator('input[type=checkbox]') }).first();
-    const box2 = (await again.boundingBox().catch(() => null)) || box;
+    const findAgain = () => page.locator('#fdt-container li:visible').filter({ hasText: text }).filter({ has: page.locator('input[type=checkbox]') }).first();
+    let again = findAgain();
+    // A dropdown (horizontal layout) closes after a click: open it again, so the value can be seen. Short waits only: a lookup that
+    // finds nothing must not wait out the 8 s default (that made this check take a minute in the horizontal layout).
+    if (!(await again.isVisible().catch(() => false))) {
+      const g2 = await openGroup(p, kind);
+      if (g2.ok) { Object.assign(g, g2); again = findAgain(); }
+    }
+    const box2 = (await again.boundingBox({ timeout: 1500 }).catch(() => null)) || box;
     const after = await page.screenshot({ clip: { x: Math.max(0, box2.x), y: Math.max(0, box2.y), width: Math.min(box2.width, 400), height: box2.height } }).catch(() => null);
     const s2 = await p.shot('V-10-' + kind + '-after-click');
-    const checked = await again.locator('input[type=checkbox]').first().isChecked().catch(() => null);
+    const checked = await again.locator('input[type=checkbox]').first().isChecked({ timeout: 1500 }).catch(() => null);
     if (!before || !after) parts.push({ title: g.title, status: 'error', detail: 'could not take the comparison pictures' }), shots.push(s1, s2);
     else {
       const ratio = changedRatio(before, after);

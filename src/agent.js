@@ -128,6 +128,22 @@ async function upgradeReports(root, cfg, opts) {
   return { upgraded };
 }
 
+let SI_SIG = '', SI_AT = 0;
+// The Schedule page's facts (saved settings, Windows task, what runs now, what waits) go up when they change, and at least every
+// 90 seconds so the page can tell that the machine is alive.
+async function syncScheduleInfo(root, cfg, opts) {
+  const o = Object.assign({ fetchImpl: null, infoFn: null, force: false }, opts);
+  ensureToken();
+  const monitor = sync.syncConfig(cfg);
+  if (!monitor || monitor.error) return { sent: false };
+  const info = (o.infoFn || sched.info)(root, cfg);
+  const sig = JSON.stringify(Object.assign({}, info, { at: '' }));
+  if (!o.force && sig === SI_SIG && Date.now() - SI_AT < 90000) return { sent: false };
+  await sync.send(monitor, 'POST', 'schedule-info', JSON.stringify(info), null, o.fetchImpl);
+  SI_SIG = sig; SI_AT = Date.now();
+  return { sent: true };
+}
+
 const RQ_SENT = new Map(); // request id -> what was last reported to the web page (only changes go up)
 const rqSig = (r) => [r.status, r.note, r.runId, r.startedAt, r.finishedAt].join('|');
 
@@ -186,6 +202,7 @@ async function runAgent(root, cfg, log) {
         const r = await syncRunRequests(root, cfg);
         if (r.taken || r.rejected || r.cancelled || r.started) say('Run requests: ' + [r.taken && r.taken + ' new', r.rejected && r.rejected + ' rejected', r.cancelled && r.cancelled + ' cancelled', r.started && r.started + ' started'].filter(Boolean).join(', '));
       } catch (e) { say('Run requests failed: ' + e.message); }
+      try { await syncScheduleInfo(root, cfg); } catch (e) { say('Schedule info failed: ' + e.message); }
       if (Date.now() - lastOv >= 30000) {
         lastOv = Date.now();
         try { const r = await syncOverrides(root, cfg); if (r.changed) say('Manual verdicts synced for ' + r.changed + ' run(s); reports and numbers recalculated'); } catch (e) { say('Verdict sync failed: ' + e.message); }
@@ -235,4 +252,4 @@ function uninstallAgent() {
   return { ok: true, message: 'Removed from startup. A running agent stops at the next logoff (or end its node process).' };
 }
 
-module.exports = { checkOnce, syncOverrides, upgradeReports, syncRunRequests, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };
+module.exports = { checkOnce, syncOverrides, upgradeReports, syncRunRequests, syncScheduleInfo, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };

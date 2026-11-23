@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "mode": "everyNDays",
   "time": "09:00",
   "weekday": "MON",

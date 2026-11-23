@@ -160,7 +160,7 @@ a.brand{color:inherit;text-decoration:none}
   }
 
   function nav() {
-    $('nav').innerHTML = TABS.map(function (t) { return '<a href="#' + t[0] + '" class="' + (TAB === t[0] ? 'on' : '') + '">' + t[1] + (t[0] === 'live' && P && P.running ? ' <span class="pulse"></span>' : '') + '</a>'; }).join('') + '<a href="guide.html" title="What this tool is and how to use it">Guide</a>';
+    $('nav').innerHTML = TABS.map(function (t) { return '<a href="#' + t[0] + '" class="' + (TAB === t[0] ? 'on' : '') + '">' + t[1] + (t[0] === 'live' && P && P.running ? ' <span class="pulse"></span>' : '') + '</a>'; }).join('') + '<a href="guide.html" title="What this tool is and how to use it">Guide</a><a href="guide.html#codes" title="Mỗi mã test (V-10, S-01...) kiểm tra gì và từng lỗi nghĩa là gì">Mã test &amp; lỗi</a>';
     var m = $('mode');
     m.textContent = S.readOnly ? 'READ-ONLY COPY' + (S.publishedAt ? ' · ' + tsLocal(S.publishedAt).slice(0, 10) : '') : 'LOCAL · EDITABLE';
     m.className = 'badge' + (S.readOnly ? '' : ' local');

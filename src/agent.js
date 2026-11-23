@@ -81,7 +81,7 @@ async function syncOverrides(root, cfg, opts) {
   const { runsDir, dataDir } = require('./store/paths');
   const dir = runsDir(root, cfg);
   const ids = new Set();
-  try { const p = require('./store/progress').readProgress(dataDir(root, cfg)); if (p && p.runId) ids.add(p.runId); } catch (e) { /* no progress */ }
+  try { require('./store/progress').readAllProgress(dataDir(root, cfg)).forEach((p) => { if (p && p.runId) ids.add(p.runId); }); } catch (e) { /* no progress */ }
   try { fs.readdirSync(dir).filter((d) => fs.existsSync(path.join(dir, d, 'results.json'))).sort().slice(-3).forEach((d) => ids.add(d)); } catch (e) { /* no runs */ }
   let changed = 0;
   for (const runId of ids) {
@@ -111,12 +111,12 @@ async function upgradeReports(root, cfg, opts) {
   if (!monitor || monitor.error) return { upgraded: 0 };
   const { runsDir, dataDir } = require('./store/paths');
   const dir = runsDir(root, cfg);
-  let going = null;
-  try { const p = require('./store/progress').readProgress(dataDir(root, cfg)); if (p && p.running) going = p.runId; } catch (e) { /* none */ }
+  const going = new Set(); // every run that is still going (one per store)
+  try { require('./store/progress').readAllProgress(dataDir(root, cfg)).forEach((p) => { if (p && p.running) going.add(p.runId); }); } catch (e) { /* none */ }
   let upgraded = 0;
   const ids = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((d) => fs.existsSync(path.join(dir, d, 'results.json'))).sort().slice(-3);
   for (const runId of ids) {
-    if (runId === going) continue;
+    if (going.has(runId)) continue;
     const rep = path.join(dir, runId, 'report.html');
     if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('tc-report-v4')) continue;
     o.refresh({ root, cfg, runId, checklist: cfgLib.loadChecklist(root) });
@@ -126,6 +126,43 @@ async function upgradeReports(root, cfg, opts) {
   }
   if (upgraded) await sync.pushState(monitor, require('./publish').buildState(root, cfg, { remote: true }), o.fetchImpl).catch(() => {}); // the run list now carries the theme names
   return { upgraded };
+}
+
+const RQ_SENT = new Map(); // request id -> what was last reported to the web page (only changes go up)
+const rqSig = (r) => [r.status, r.note, r.runId, r.startedAt, r.finishedAt].join('|');
+
+// "Run test" requests made on the web page: take the new ones, check them again here, cancel the ones that were cancelled,
+// start what can start (one run per store; a busy store keeps its request queued), and report every change back.
+// Returns { taken, rejected, cancelled, started, reported }.
+async function syncRunRequests(root, cfg, opts) {
+  const o = Object.assign({ fetchImpl: null, startDue: null }, opts);
+  ensureToken();
+  const monitor = sync.syncConfig(cfg);
+  const q = require('./run-queue');
+  const out = { taken: 0, rejected: 0, cancelled: 0, started: 0, reported: 0 };
+  let remote = [];
+  if (monitor && !monitor.error) { try { remote = (await getJson(monitor, 'run-requests', o.fetchImpl)).requests || []; } catch (e) { remote = []; } }
+  const post = (doc) => sync.send(monitor, 'POST', 'run-requests/' + encodeURIComponent(doc.id), JSON.stringify(doc), null, o.fetchImpl).then(() => true, () => false);
+  for (const r of remote) {
+    if (!r || !/^[\w-]{1,40}$/.test(String(r.id || ''))) continue;
+    const mine = q.get(root, r.id);
+    if (!mine && r.status === 'requested') {
+      const a = q.add(root, cfg, { env: r.env, browser: r.browser, themes: r.themes, tracker: r.tracker }, r.requestedBy, { id: r.id, requestedAt: r.requestedAt });
+      if (a.ok) out.taken++;
+      else if (!a.duplicate) { out.rejected++; await post(Object.assign({}, r, { status: 'rejected', note: a.error, finishedAt: new Date().toISOString() })); }
+    } else if (mine && mine.status === 'queued' && r.cancelRequested) {
+      if (q.cancel(root, r.id).ok) out.cancelled++;
+    }
+  }
+  const started = (o.startDue || q.startDue)(root, cfg);
+  out.started = started.length;
+  if (monitor && !monitor.error) {
+    for (const r of q.list(root).slice(-30)) {
+      if (RQ_SENT.get(r.id) === rqSig(r)) continue;
+      if (await post(q.publicView(r))) { RQ_SENT.set(r.id, rqSig(r)); out.reported++; }
+    }
+  }
+  return out;
 }
 
 // Keeps checking, forever. The Windows task "Theme check agent" starts this at logon.
@@ -145,6 +182,10 @@ async function runAgent(root, cfg, log) {
   await monitor.watch(root, cfg, {
     everyMs: 15000,
     extraTick: async () => {
+      try { // "Run test" requests: every tick (15 s)
+        const r = await syncRunRequests(root, cfg);
+        if (r.taken || r.rejected || r.cancelled || r.started) say('Run requests: ' + [r.taken && r.taken + ' new', r.rejected && r.rejected + ' rejected', r.cancelled && r.cancelled + ' cancelled', r.started && r.started + ' started'].filter(Boolean).join(', '));
+      } catch (e) { say('Run requests failed: ' + e.message); }
       if (Date.now() - lastOv >= 30000) {
         lastOv = Date.now();
         try { const r = await syncOverrides(root, cfg); if (r.changed) say('Manual verdicts synced for ' + r.changed + ' run(s); reports and numbers recalculated'); } catch (e) { say('Verdict sync failed: ' + e.message); }
@@ -194,4 +235,4 @@ function uninstallAgent() {
   return { ok: true, message: 'Removed from startup. A running agent stops at the next logoff (or end its node process).' };
 }
 
-module.exports = { checkOnce, syncOverrides, upgradeReports, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };
+module.exports = { checkOnce, syncOverrides, upgradeReports, syncRunRequests, runAgent, installAgent, uninstallAgent, readRev, writeRev, revFile };

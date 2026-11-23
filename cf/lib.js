@@ -164,3 +164,39 @@ export function validateConfig(c) {
   if (s === undefined && t === undefined) err.push('nothing to save');
   return err.slice(0, 8);
 }
+
+// ---------- live progress of every store (progress-<store>.json, and the older progress.json) ----------
+// A run that says "running" but has not reported for 10 minutes is called stalled (the runner cannot say "I crashed").
+// One entry per store: the running one, else the newest. Running first, then newest.
+export async function readAllProgress(env) {
+  const byEnv = new Map();
+  let cursor;
+  do {
+    const page = env.STORE.list ? await env.STORE.list({ prefix: 'data/progress', cursor }) : { objects: [{ key: 'data/progress.json' }] };
+    for (const o of page.objects || []) {
+      if (!/^data\/progress(-[\w-]+)?\.json$/.test(o.key)) continue;
+      let p = null;
+      try { p = JSON.parse(await (await env.STORE.get(o.key)).text()); } catch (e) { continue; }
+      if (!p || typeof p !== 'object') continue;
+      if (p.running && p.updatedAt && Date.now() - new Date(p.updatedAt).getTime() > 10 * 60 * 1000) { p.running = false; p.outcome = 'no-update-for-10-minutes'; p.phase = 'stalled'; }
+      const k = p.env || o.key;
+      const old = byEnv.get(k);
+      if (!old || (p.running && !old.running) || (!!p.running === !!old.running && String(p.updatedAt) > String(old.updatedAt))) byEnv.set(k, p);
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  // running ones first, the one that started first on top (a stable order: the page must not flip between two runs), then the newest
+  return Array.from(byEnv.values()).sort((a, b) => (b.running ? 1 : 0) - (a.running ? 1 : 0) || (a.running && b.running ? String(a.startedAt).localeCompare(String(b.startedAt)) : String(b.updatedAt).localeCompare(String(a.updatedAt))));
+}
+
+// ---------- a "Run test" request made on the web page: checked here, and checked again by the test machine ----------
+export function validateRunRequest(b) {
+  const err = [];
+  if (!b || typeof b !== 'object') return ['bad request'];
+  if (!/^[a-z0-9_-]{1,20}$/i.test(String(b.env || ''))) err.push('testing environment is not valid');
+  if (b.browser !== undefined && !['chrome', 'msedge'].includes(b.browser)) err.push('browser must be chrome or msedge');
+  if (!Array.isArray(b.themes) || !b.themes.length) err.push('choose at least one theme');
+  else if (b.themes.length > 80) err.push('at most 80 themes in one run');
+  else if (!b.themes.every((x) => NAME_OK.test(String(x).trim()))) err.push('a theme name is not valid');
+  return err;
+}

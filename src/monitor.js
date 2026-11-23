@@ -84,22 +84,26 @@ async function syncNow(root, cfg, opts) {
 
 // node src/cli.js watch: push the local progress file while it changes, and the data when a run ends.
 async function watch(root, cfg, opts) {
-  const { readProgress } = require('./store/progress');
+  const { readAllProgress } = require('./store/progress');
   const s = sync.syncConfig(cfg);
   if (!s || s.error) { console.log((s && s.error) || 'No "cloudflare" section in config/config.local.json.'); return; }
-  const pusher = sync.createProgressPusher(s);
-  const livePush = liveRunPusher(s, root, cfg);
-  let wasRunning = null;
+  const pushers = new Map(); // one per store (environment): runs on different stores go on at the same time
+  const per = (p) => {
+    const k = p.env || 'default';
+    if (!pushers.has(k)) pushers.set(k, { pusher: sync.createProgressPusher(s), livePush: liveRunPusher(s, root, cfg), wasRunning: null });
+    return pushers.get(k);
+  };
   await sync.pushState(s, remoteState(root, cfg)).catch((e) => console.log('state push failed: ' + e.message));
   console.log('Watching the run progress and pushing it to ' + s.base + ' (Ctrl+C to stop)');
   const tick = async () => {
     if (opts && opts.extraTick) await opts.extraTick();
-    const p = readProgress(dataDir(root, cfg));
-    if (!p) return;
-    pusher(p);
-    if (p.running) await livePush(p);
-    if (wasRunning && !p.running) { await livePush(p, true); await pusher.done(); await sync.pushState(s, remoteState(root, cfg)).catch((e) => console.log('state push failed: ' + e.message)); console.log('Run ended: dashboard data pushed.'); }
-    wasRunning = p.running;
+    for (const p of readAllProgress(dataDir(root, cfg))) {
+      const w = per(p);
+      w.pusher(p);
+      if (p.running) await w.livePush(p);
+      if (w.wasRunning && !p.running) { await w.livePush(p, true); await w.pusher.done(); await sync.pushState(s, remoteState(root, cfg)).catch((e) => console.log('state push failed: ' + e.message)); console.log('Run ended (' + (p.env || '?') + '): dashboard data pushed.'); }
+      w.wasRunning = p.running;
+    }
   };
   await tick();
   await new Promise((resolve) => { const t = setInterval(tick, (opts && opts.everyMs) || 15000); process.on('SIGINT', () => { clearInterval(t); resolve(); }); });
@@ -117,7 +121,10 @@ async function removeRunsRemote(root, cfg, ids, opts) {
     try { await sync.send(s, 'DELETE', `run/${encodeURIComponent(id)}`, undefined, null, o.fetchImpl); lines.push(id + ': removed on Cloudflare'); }
     catch (e) { lines.push(id + ': FAILED on Cloudflare (' + e.message + ')'); }
   }
-  if (o.clearProgress) await sync.send(s, 'DELETE', 'progress', undefined, null, o.fetchImpl).catch(() => {});
+  if (o.clearProgress) { // the legacy single file, and every per-store file that is about one of these runs
+    await sync.send(s, 'DELETE', 'progress', undefined, null, o.fetchImpl).catch(() => {});
+    for (const id of ids) await sync.send(s, 'DELETE', 'progress?run=' + encodeURIComponent(id), undefined, null, o.fetchImpl).catch(() => {});
+  }
   await sync.pushState(s, remoteState(root, cfg), o.fetchImpl).catch((e) => lines.push('dashboard data not sent: ' + e.message));
   return { ok: !lines.some((l) => /FAILED|not sent/.test(l)), message: lines.join('\n') };
 }

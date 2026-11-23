@@ -12,7 +12,7 @@ const { render } = require('../src/report/html');
 const { listen } = require('../src/server');
 
 const SRC = path.resolve(__dirname, '..');
-const TABS = ['live', 'overview', 'issues', 'runs', 'themes', 'schedule'];
+const TABS = ['live', 'overview', 'issues', 'runs', 'runtest', 'themes', 'schedule'];
 
 function stub() {
   const ui = fs.readFileSync(path.join(SRC, 'ui', 'index.html'));

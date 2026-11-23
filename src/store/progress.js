@@ -5,7 +5,9 @@ const path = require('path');
 
 const MAX_EVENTS = 80;
 
-function fileFor(dataDir) { return path.join(dataDir, 'progress.json'); }
+// One file per environment, so runs on different stores can go on at the same time (progress-staging.json, progress-prod.json).
+// progress.json is what older runs wrote; it is still read.
+function fileFor(dataDir, env) { return path.join(dataDir, env ? `progress-${String(env).replace(/[^\w-]/g, '')}.json` : 'progress.json'); }
 
 function pidAlive(pid) {
   if (!pid) return false;
@@ -14,7 +16,7 @@ function pidAlive(pid) {
 
 class Progress {
   constructor(dataDir, init, onChange) {
-    this.file = fileFor(dataDir);
+    this.file = fileFor(dataDir, init && init.env);
     this.onChange = onChange || null;
     this.s = Object.assign({
       running: true, outcome: null, pid: process.pid, runId: '', env: '', startedAt: new Date().toISOString(), updatedAt: null, finishedAt: null,
@@ -87,12 +89,39 @@ class Progress {
 }
 
 // What the dashboard shows. A "running" file whose process is gone is reported as stalled.
-function readProgress(dataDir) {
+function readFile(file) {
   let s = null;
-  try { s = JSON.parse(fs.readFileSync(fileFor(dataDir), 'utf8')); } catch (e) { return null; }
+  try { s = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return null; }
   if (s.running && !pidAlive(s.pid)) { s.running = false; s.outcome = 'stopped-unexpectedly'; s.phase = 'stopped'; }
   return withEta(s);
 }
+
+// Every environment's latest run (progress-<env>.json and the older progress.json): running first, then the newest.
+// When two files are about the same environment, the one that is running, or else the newer one, counts.
+function readAllProgress(dataDir) {
+  let names = [];
+  try { names = fs.readdirSync(dataDir).filter((n) => /^progress(-[\w-]+)?\.json$/.test(n)); } catch (e) { return []; }
+  const byEnv = new Map();
+  for (const n of names) {
+    const p = readFile(path.join(dataDir, n));
+    if (!p) continue;
+    const k = p.env || n;
+    const old = byEnv.get(k);
+    const better = !old || (p.running && !old.running) || (p.running === old.running && String(p.updatedAt) > String(old.updatedAt));
+    if (better) byEnv.set(k, p);
+  }
+  // running ones first, the one that started first on top (a stable order: the page must not flip between two runs), then the newest
+  return Array.from(byEnv.values()).sort((x, y) => (y.running ? 1 : 0) - (x.running ? 1 : 0) || (x.running && y.running ? String(x.startedAt).localeCompare(String(y.startedAt)) : String(y.updatedAt).localeCompare(String(x.updatedAt))));
+}
+
+// The one the page shows when nothing else is asked for: the one running (or the newest); with an env, that environment's.
+function readProgress(dataDir, env) {
+  const all = readAllProgress(dataDir);
+  return (env ? all.find((p) => p.env === env) : all[0]) || null;
+}
+
+// Is a run going on in this environment right now (a live process)?
+function envRunning(dataDir, env) { return readAllProgress(dataDir).some((p) => p.running && p.env === env); }
 
 // Average time of finished themes x themes left. Only an estimate; null until one theme has finished.
 function withEta(s) {
@@ -107,4 +136,4 @@ function withEta(s) {
   return s;
 }
 
-module.exports = { Progress, readProgress, pidAlive, fileFor, withEta };
+module.exports = { Progress, readProgress, readAllProgress, envRunning, pidAlive, fileFor, withEta };

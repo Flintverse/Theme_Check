@@ -15,8 +15,11 @@ function deleteRuns({ root, cfg, runIds, checklist }) {
   const removed = [], missing = [];
   const idxFile = path.join(data, 'runs.json');
   let index = readJson(idxFile, []);
-  const live = readJson(path.join(data, 'progress.json'), null);
-  if (live && live.running && runIds.includes(live.runId) && require('./progress').pidAlive(live.pid)) throw new Error('Run ' + live.runId + ' is still going. Stop it first.');
+  const progressFiles = (() => { try { return fs.readdirSync(data).filter((n) => /^progress(-[\w-]+)?\.json$/.test(n)); } catch (e) { return []; } })();
+  for (const n of progressFiles) {
+    const live = readJson(path.join(data, n), null);
+    if (live && live.running && runIds.includes(live.runId) && require('./progress').pidAlive(live.pid)) throw new Error('Run ' + live.runId + ' is still going. Stop it first.');
+  }
   for (const id of runIds) {
     if (!ID.test(id)) throw new Error('not a run id: ' + id);
     const folder = path.join(dir, id);
@@ -30,10 +33,12 @@ function deleteRuns({ root, cfg, runIds, checklist }) {
   fs.mkdirSync(data, { recursive: true });
   fs.writeFileSync(idxFile, JSON.stringify(index, null, 2));
   // the Live page must not keep showing a run that no longer exists
-  const progFile = path.join(data, 'progress.json');
-  const prog = readJson(progFile, null);
   let progressCleared = false;
-  if (prog && runIds.includes(prog.runId) && !prog.running) { fs.rmSync(progFile, { force: true }); progressCleared = true; }
+  for (const n of progressFiles) {
+    const progFile = path.join(data, n);
+    const prog = readJson(progFile, null);
+    if (prog && runIds.includes(prog.runId) && !prog.running) { fs.rmSync(progFile, { force: true }); progressCleared = true; }
+  }
   const tracker = rebuildTracker({ root, cfg, checklist, index });
   return { removed, missing, progressCleared, tracker };
 }

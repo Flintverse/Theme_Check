@@ -34,8 +34,9 @@ function createProgressPusher(sync, opts) {
   const flush = () => {
     timer = null;
     const body = JSON.stringify(pending);
+    const where = 'progress' + (pending && /^[\w-]{1,20}$/.test(pending.env || '') ? '/' + pending.env : ''); // one file per store, so two runs do not overwrite each other
     last = o.now();
-    inflight = inflight.then(() => send(sync, 'POST', 'progress', body, null, o.fetchImpl)).catch((e) => { if (!warned) { warned = true; o.onError(`Monitor push failed (${e.message}); the run continues.`); } });
+    inflight = inflight.then(() => send(sync, 'POST', where, body, null, o.fetchImpl)).catch((e) => { if (!warned) { warned = true; o.onError(`Monitor push failed (${e.message}); the run continues.`); } });
   };
   const push = (s) => {
     pending = s;

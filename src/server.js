@@ -8,7 +8,8 @@ const cfgLib = require('./config');
 const sched = require('./schedule');
 const { archiveRoot, runsDir, dataDir } = require('./store/paths');
 const { themeStatus } = require('./store/tracker');
-const { readProgress } = require('./store/progress');
+const { readProgress, readAllProgress } = require('./store/progress');
+const runQueue = require('./run-queue');
 const { loadLibraries } = require('./admin/library');
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.json': 'application/json', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8' };
@@ -21,6 +22,7 @@ function createServer(root, opts) {
   // after a save: Task Scheduler + Cloudflare + GitHub follow (injectable, so tests never touch the real machine)
   const propagate = o.propagate || ((r, c, what, who) => require('./propagate').propagate(r, c, what, who));
 
+  const busyEnvs = (cfg) => Object.keys(cfg.envs).filter((e) => runQueue.envBusy(root, cfg, e));
   const state = () => {
     const cfg = cfgLib.loadConfig(root);
     const data = dataDir(root, cfg);
@@ -86,7 +88,21 @@ function createServer(root, opts) {
         if (req.headers['x-tc'] !== '1' || (origin && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin))) return send(res, 403, { error: 'forbidden' });
       }
       if (req.method === 'GET' && p === '/api/state') return send(res, 200, state());
-      if (req.method === 'GET' && p === '/api/progress') return send(res, 200, readProgress(dataDir(root, cfg)) || { running: false, none: true });
+      if (req.method === 'GET' && p === '/api/progress') return send(res, 200, readProgress(dataDir(root, cfg), url.searchParams.get('env') || undefined) || { running: false, none: true });
+      // which stores have a run (running or the last one): the Live page offers a switch between them
+      if (req.method === 'GET' && p === '/api/progress-list') return send(res, 200, { runs: readAllProgress(dataDir(root, cfg)).map((x) => ({ env: x.env, runId: x.runId, running: !!x.running, phase: x.phase, updatedAt: x.updatedAt })) });
+      // "Run test": the requests (queued, running, finished) and a new one
+      if (req.method === 'GET' && (p === '/api/run-requests' || p === '/api/run-request')) { runQueue.reconcile(root, cfg); return send(res, 200, { requests: runQueue.list(root).slice(-30).reverse().map(runQueue.publicView), browsers: runQueue.BROWSERS, busy: busyEnvs(cfg) }); }
+      if (req.method === 'POST' && p === '/api/run-request') {
+        const r = runQueue.add(root, cfg, await readBody(req), 'the dashboard on the test machine');
+        if (!r.ok) return send(res, 400, r);
+        if (o.spawnRun) runQueue.startDue(root, cfg);
+        return send(res, 200, { ok: true, request: runQueue.publicView(runQueue.get(root, r.request.id)) });
+      }
+      if (req.method === 'DELETE' && p === '/api/run-request') {
+        const r = runQueue.cancel(root, url.searchParams.get('id') || '');
+        return send(res, r.ok ? 200 : 409, r.ok ? { ok: true, request: runQueue.publicView(r.request) } : r);
+      }
       if (req.method === 'GET' && p === '/api/run-log') {
         const f = path.join(dataDir(root, cfg), 'current-run.log');
         const txt = fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').slice(-60).join('\n') : '';
@@ -143,6 +159,12 @@ function createServer(root, opts) {
 
 function listen(root, port, opts) {
   const server = createServer(root, opts);
+  // a request that waits for a busy store starts by itself when that store is free (the agent does the same; only one of them wins)
+  if (!opts || opts.spawnRun !== false) {
+    const t = setInterval(() => { try { runQueue.startDue(root, cfgLib.loadConfig(root)); } catch (e) { /* next time */ } }, 20000);
+    t.unref();
+    server.on('close', () => clearInterval(t));
+  }
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));
 }
 

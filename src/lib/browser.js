@@ -10,7 +10,9 @@ class LoginRequired extends Error {
   }
 }
 
-const profileDirFor = (root, env) => path.join(root, `.profile-${env}`);
+// One saved login per store and browser: Chrome keeps .profile-<env>, Edge keeps .profile-<env>-msedge.
+const profileDirFor = (root, env, browser) => path.join(root, `.profile-${env}${browser === 'msedge' ? '-msedge' : ''}`);
+const channelOf = (browser) => (browser === 'msedge' ? 'msedge' : 'chrome');
 
 // Window modes (second argument):
 //   'quiet'    (default for runs)  a real Chrome window placed far off-screen: nothing is visible and nothing is raised.
@@ -35,23 +37,23 @@ function markCleanExit(profileDir) {
   try { fs.rmSync(path.join(profileDir, 'Default', 'Sessions'), { recursive: true, force: true }); } catch (e) { /* the saved tabs of the last session: not needed */ }
 }
 
-async function openAdmin(profileDir, mode) {
+async function openAdmin(profileDir, mode, browser) {
   const m = mode === true ? 'quiet' : mode === false ? 'show' : (mode || 'quiet');
   fs.mkdirSync(profileDir, { recursive: true });
   markCleanExit(profileDir);
   const args = ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-features=CalculateNativeWinOcclusion', '--hide-crash-restore-bubble', '--disable-session-crashed-bubble', '--no-first-run', '--no-default-browser-check', '--disable-infobars'];
   if (m === 'quiet') args.push('--window-position=-2400,-2400', '--window-size=1400,950');
-  const ctx = await chromium.launchPersistentContext(profileDir, { channel: 'chrome', headless: m === 'headless', viewport: { width: 1400, height: 950 }, args });
+  const ctx = await chromium.launchPersistentContext(profileDir, { channel: channelOf(browser), headless: m === 'headless', viewport: { width: 1400, height: 950 }, args });
   ctx._tcQuiet = m !== 'show';
   return ctx;
 }
 
 // One-time manual login (handles the emailed code). Waits until the store admin is reached.
-async function loginFlow(profileDir, handle) {
-  const ctx = await openAdmin(profileDir, false);
+async function loginFlow(profileDir, handle, browser) {
+  const ctx = await openAdmin(profileDir, false, browser);
   const page = ctx.pages()[0] || (await ctx.newPage());
   await page.goto(`https://admin.shopify.com/store/${handle}`);
-  console.log('A Chrome window opened. Log in to Shopify there (including the emailed code).');
+  console.log('A browser window opened. Log in to Shopify there (including the emailed code).');
   console.log('This window closes by itself once the store admin is reached (10 minute limit).');
   await page.waitForURL(new RegExp(`admin\\.shopify\\.com/store/${handle}`), { timeout: 600000 });
   await page.waitForTimeout(4000);
@@ -75,4 +77,4 @@ const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
 const keyOf = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-module.exports = { chromium, openAdmin, markCleanExit, loginFlow, showWindow, profileDirFor, LoginRequired, norm, keyOf, esc };
+module.exports = { chromium, openAdmin, markCleanExit, loginFlow, showWindow, profileDirFor, channelOf, LoginRequired, norm, keyOf, esc };

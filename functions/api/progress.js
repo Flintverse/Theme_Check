@@ -1,17 +1,12 @@
-// GET /api/progress: live progress of the run in progress, pushed by the runner every ~30 seconds.
-import { json, canRead } from '../../cf/lib.js';
+// GET /api/progress[?env=<store>]: live progress of the run in progress (or the latest one), pushed by the runner every ~30 seconds.
+// Runs in different stores go on at the same time, each with its own progress file; with no env the one that is running
+// (or else the newest) is returned.
+import { json, canRead, readAllProgress } from '../../cf/lib.js';
 
 export async function onRequestGet({ request, env }) {
   if (!(await canRead(request, env))) return json({ error: 'access code needed' }, 401);
-  const obj = await env.STORE.get('data/progress.json');
-  if (!obj) return json({ running: false, none: true });
-  let p = null;
-  try { p = JSON.parse(await obj.text()); } catch (e) { return json({ running: false, none: true }); }
-  // The runner cannot say "I crashed". If a "running" run has not reported for 10 minutes, call it stalled.
-  if (p.running && p.updatedAt && Date.now() - new Date(p.updatedAt).getTime() > 10 * 60 * 1000) {
-    p.running = false;
-    p.outcome = 'no-update-for-10-minutes';
-    p.phase = 'stalled';
-  }
-  return json(p);
+  const want = new URL(request.url).searchParams.get('env');
+  const all = await readAllProgress(env);
+  const p = want ? all.find((x) => x.env === want) : all[0];
+  return json(p || { running: false, none: true });
 }

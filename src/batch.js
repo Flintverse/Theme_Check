@@ -7,7 +7,7 @@
 // Without pivots in the environment config the old loop is used (batches of 15, whatever is live stays live).
 const fs = require('fs');
 const path = require('path');
-const { chromium, openAdmin, profileDirFor, keyOf, norm } = require('./lib/browser');
+const { chromium, openAdmin, profileDirFor, channelOf, keyOf, norm } = require('./lib/browser');
 const design = require('./admin/design');
 const editor = require('./admin/editor');
 const themesApi = require('./admin/themes');
@@ -142,8 +142,8 @@ async function testTheme({ ctx, browser, env, cfg, checklist, theme, themeId, ru
 }
 
 // The browser was closed before, so open a short one just to clean up / restore.
-async function afterRun(root, cfg, envNameStr, runDir, log, fn) {
-  const ctx = await openAdmin(profileDirFor(root, envNameStr), 'quiet');
+async function afterRun(root, cfg, envNameStr, runDir, log, fn, browserName) {
+  const ctx = await openAdmin(profileDirFor(root, envNameStr, browserName), 'quiet', browserName);
   try { return await fn(ctx, cfg.envs[envNameStr]); } finally { await ctx.close().catch(() => {}); }
 }
 
@@ -170,8 +170,8 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   };
   process.on('SIGINT', onSig);
   process.on('SIGTERM', onSig);
-  const ctx = await openAdmin(profileDirFor(root, envKey), opts.show ? 'show' : opts.headless ? 'headless' : 'quiet');
-  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const ctx = await openAdmin(profileDirFor(root, envKey, opts.browser), opts.show ? 'show' : opts.headless ? 'headless' : 'quiet', opts.browser);
+  const browser = await chromium.launch({ channel: channelOf(opts.browser), headless: true });
   ctxRef = ctx; browserRef = browser;
   let designPage = null;
   const dbg = path.join(runDir, '_debug');
@@ -284,7 +284,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   } finally {
     await browser.close().catch(() => {});
     await ctx.close().catch(() => {});
-    require('./lib/browser').markCleanExit(profileDirFor(root, envKey));
+    require('./lib/browser').markCleanExit(profileDirFor(root, envKey, opts.browser));
     saveRun(runDir, run, checklist, prev);
     process.removeListener('SIGINT', onSig);
     process.removeListener('SIGTERM', onSig);
@@ -296,7 +296,7 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
       await afterRun(root, cfg, envKey, runDir, log, async (c2, e2) => {
         const c = await themesApi.cleanDrafts(c2, e2, log, dbg, liveInfo ? [liveInfo.id] : [], keepNames);
         log(`  store cleaned at the end: ${c.deleted} draft theme(s) deleted`);
-      });
+      }, opts.browser);
     } catch (e) { log('Final clean-up failed: ' + e.message); }
   }
   prog.setPhase('finishing', 'Writing the report, summary and issue tracker');

@@ -103,7 +103,8 @@ a.brand{color:inherit;text-decoration:none}
 (function () {
   var CAN = false; // signed in on the web copy AND listed as an editor
   var S = null, P = null, TAB = 'overview', draftThemes = null, issueFilter = { status: 'open', theme: '', check: '', env: '' };
-  var TABS = [['live', 'Live'], ['overview', 'Overview'], ['issues', 'Issue tracker'], ['runs', 'Runs'], ['themes', 'Themes'], ['schedule', 'Schedule']];
+  var PL = [], SELENV = ''; // the stores that have a run (Live shows one at a time), and the one the person picked
+  var TABS = [['live', 'Live'], ['overview', 'Overview'], ['issues', 'Issue tracker'], ['runs', 'Runs'], ['runtest', 'Run test'], ['themes', 'Themes'], ['schedule', 'Schedule']];
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function $(id) { return document.getElementById(id); }
@@ -169,10 +170,11 @@ a.brand{color:inherit;text-decoration:none}
   function render() {
     if (!S) return;
     nav();
-    var f = { live: vLive, overview: vOverview, issues: vIssues, runs: vRuns, themes: vThemes, schedule: vSchedule }[TAB] || vOverview;
+    var f = { live: vLive, overview: vOverview, issues: vIssues, runs: vRuns, runtest: vRunTest, themes: vThemes, schedule: vSchedule }[TAB] || vOverview;
     $('main').innerHTML = '<div id="banner">' + bannerHtml() + '</div><div id="view" style="display:grid;gap:18px">' + f() + '</div>';
     if (TAB === 'themes') bindThemes();
     if (TAB === 'schedule') bindSchedule();
+    if (TAB === 'runtest') bindRunTest();
     if (TAB === 'issues') bindIssues();
   }
 
@@ -309,15 +311,23 @@ a.brand{color:inherit;text-decoration:none}
     }
     return '';
   }
+  // When runs go on in more than one store, a button per store switches the page between them.
+  function liveSwitch() {
+    if (!PL || PL.length < 2) return '';
+    return '<div class="card"><div class="row" style="align-items:center"><b class="small">Stores:</b>' + PL.map(function (x) {
+      var on = P && P.env === x.env;
+      return '<button class="navbtn" data-live-env="' + esc(x.env) + '"' + (on ? ' style="outline:2px solid var(--accent)"' : '') + '>' + esc(x.env) + ' &middot; ' + (x.running ? 'RUNNING' : esc(x.phase || 'finished').toUpperCase()) + '</button>';
+    }).join('') + '</div></div>';
+  }
   function vLive() {
-    if (!P || P.none) return '<div class="card"><h2>No run yet</h2><p class="muted">When a check starts (from the Schedule tab, the Windows task, or <code>node src/cli.js run</code>), its progress shows here, theme by theme.</p></div>';
+    if (!P || P.none) return liveSwitch() + '<div class="card"><h2>No run yet</h2><p class="muted">When a check starts (from the Run test tab, the Schedule tab, the Windows task, or <code>node src/cli.js run</code>), its progress shows here, theme by theme.</p></div>';
     var Q = withOv(P);
     var st = stateLabel(P), c = P.counts || { total: 0, done: 0, left: 0, failedSetup: 0 };
     var pct = c.total ? Math.round(c.done / c.total * 100) : 0;
     var end = P.finishedAt ? new Date(P.finishedAt).getTime() : Date.now();
     var stale = P.running && P.updatedAt && Date.now() - new Date(P.updatedAt).getTime() > 90000;
     var cur = P.current;
-    return '<div><h2>Live progress <span class="pill ' + st[1] + '">' + st[0] + '</span></h2><p class="muted small">Run ' + esc(P.runId) + ' (' + esc(P.env) + '), started ' + esc(tsLocal(P.startedAt).slice(0, 16)) + ' (UTC+7), ' + esc(P.mode || '') + ' mode. Updated ' + ago(P.updatedAt) + '.</p></div>' +
+    return liveSwitch() + '<div><h2>Live progress <span class="pill ' + st[1] + '">' + st[0] + '</span></h2><p class="muted small">Run ' + esc(P.runId) + ' (' + esc(P.env) + '), started ' + esc(tsLocal(P.startedAt).slice(0, 16)) + ' (UTC+7), ' + esc(P.mode || '') + ' mode. Updated ' + ago(P.updatedAt) + '.</p></div>' +
       (stale ? '<div class="note">No update for over 90 seconds. A step may be waiting on Shopify (the editor save waits up to a minute). If this stays, check the machine.</div>' : '') +
       '<div class="card"><div class="row" style="justify-content:space-between"><b>' + c.done + ' of ' + c.total + ' themes done</b><span class="muted small">' + pct + '%' + (P.etaMinutes != null ? ' &middot; about ' + P.etaMinutes + ' min left (estimate)' : '') + ' &middot; elapsed ' + fmt(end - new Date(P.startedAt).getTime()) + '</span></div><div class="pbar" style="margin-top:8px" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
       '<p style="margin:12px 0 0"><b>Now:</b> ' + (P.running ? (cur ? esc(cur.theme) + ' &ndash; ' + esc(cur.step || cur.status) + ' <span class="muted small">(this step ' + ago(cur.since) + ')</span>' : esc(P.step || P.phase)) : esc(P.phase)) + '</p></div>' +
@@ -532,7 +542,9 @@ a.brand{color:inherit;text-decoration:none}
   var progT = null;
   function loadProgress() {
     clearTimeout(progT);
-    return apiGet('/api/progress').then(function (r) { if (!r.ok) throw 0; return r.json(); }).catch(function () { return { none: true }; })
+    // which stores have a run (a second store can be tested at the same time); a page without this endpoint just shows one run
+    apiGet('/api/progress-list').then(function (r) { return r.ok ? r.json() : { runs: [] }; }).then(function (j) { PL = (j && j.runs) || []; }).catch(function () { PL = []; });
+    return apiGet('/api/progress' + (SELENV ? '?env=' + encodeURIComponent(SELENV) : '')).then(function (r) { if (!r.ok) throw 0; return r.json(); }).catch(function () { return { none: true }; })
       .then(function (p) {
         var was = P && P.running; P = withCounts(p);
         if (!S) return;
@@ -544,6 +556,97 @@ a.brand{color:inherit;text-decoration:none}
         });
       })
       .then(function () { progT = setTimeout(loadProgress, (P && P.running) ? 3000 : 12000); });
+  }
+
+  /* ---- Run test: choose themes, store and browser, press Run test ---- */
+  var RT = { env: '', browser: 'chrome', tracker: '0', filter: '', sel: {}, requests: [], busy: [], browsers: { chrome: 'Google Chrome', msedge: 'Microsoft Edge' }, msg: '', bad: false, sending: false };
+  var rtT = null;
+  function rtThemes() { return (S.themes || []).filter(function (t) { return t.enabled !== false && inEnv(t, RT.env); }).map(function (t) { return t.name; }); }
+  function rtChosen() { return rtThemes().filter(function (n) { return RT.sel[n]; }); }
+  function rtStatus(r) {
+    var m = { requested: ['SENT, WAITING FOR THE TEST MACHINE', 'p-minor'], queued: ['QUEUED', 'p-major'], running: ['RUNNING', 'p-open'], done: ['DONE', 'p-fixed'], failed: ['FAILED', 'p-open'], cancelled: ['CANCELLED', 'p-minor'], rejected: ['REJECTED', 'p-open'] }[r.status] || [String(r.status).toUpperCase(), 'p-minor'];
+    return '<span class="pill ' + m[1] + '">' + m[0] + '</span>';
+  }
+  function rtListHtml() {
+    var f = RT.filter.trim().toLowerCase(), names = rtThemes().filter(function (n) { return !f || n.toLowerCase().indexOf(f) >= 0; }), d = isRO() ? ' disabled' : '';
+    if (!names.length) return '<span class="muted small">' + (f ? 'No theme matches.' : 'This store has no themes in its list. Add some in the Themes tab.') + '</span>';
+    return names.map(function (n) { return '<label class="vb"><input type="checkbox" class="rt-t" data-n="' + esc(n) + '"' + (RT.sel[n] ? ' checked' : '') + d + '> ' + esc(n) + '</label>'; }).join('');
+  }
+  function rtBusyHtml() {
+    var busy = RT.busy.indexOf(RT.env) >= 0;
+    return busy ? '<div class="note">A run is going on in the <b>' + esc(RT.env) + '</b> store now. It is not touched: your test waits in the queue and starts by itself when that run ends. To test at the same time, pick another store.</div>' : '';
+  }
+  function rtReqsHtml() {
+    if (!RT.requests.length) return '<p class="muted small" style="margin:0">No test requested yet.</p>';
+    return '<table><thead><tr><th>Asked</th><th>Store / browser</th><th>Themes</th><th>State</th><th>Details</th><th></th></tr></thead><tbody>' + RT.requests.map(function (r) {
+      var th = r.themes || [], can = !isRO() && (r.status === 'requested' || r.status === 'queued') && !r.cancelRequested;
+      return '<tr><td class="small">' + esc(tsLocal(r.requestedAt).slice(5, 16)) + '<div class="muted">' + esc(r.requestedBy || '') + '</div></td>' +
+        '<td>' + esc(r.env) + '<div class="small muted">' + esc((RT.browsers || {})[r.browser] || r.browser) + '</div></td>' +
+        '<td class="small" title="' + esc(th.join(', ')) + '">' + th.length + ' theme(s): ' + esc(th.slice(0, 4).join(', ')) + (th.length > 4 ? ', ...' : '') + '</td>' +
+        '<td>' + rtStatus(r) + (r.cancelRequested ? ' <span class="small muted">cancel asked</span>' : '') + '</td>' +
+        '<td class="small">' + esc(r.note || '') + (r.runId ? ' ' + (r.status === 'running' ? '<a href="#live" data-live-env="' + esc(r.env) + '">Watch it live</a> &middot; ' : '') + reportLink(r.runId, 'Report') : '') + '</td>' +
+        '<td>' + (can ? '<button class="danger" data-cancel="' + esc(r.id) + '">Cancel</button>' : '') + '</td></tr>';
+    }).join('') + '</tbody></table>';
+  }
+  function vRunTest() {
+    var ro = isRO(), d = ro ? ' disabled' : '';
+    if (!RT.env) RT.env = (S.envs.indexOf('staging') >= 0 ? 'staging' : S.envs[0]) || '';
+    var names = rtThemes();
+    function opt(v, cur, l) { return '<option value="' + esc(v) + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + esc(l || v) + '</option>'; }
+    return '<div><h2>Run test</h2><p class="muted small">Choose the themes, the store to test in and the browser, then press <b>Run test</b>. It starts on the test machine in its own browser, without touching a run that is already going. Runs in <b>different stores</b> go on at the same time. One store can only have <b>one run at a time</b> (the Findter layout is a store-wide setting, so two runs would change each other\'s result): a test for a store that is busy waits and starts by itself when that run ends.</p></div>' +
+      (ro ? '<div class="note">You can look at the requests but not start a test. Editors can start one here, or on the test machine.</div>' : '') +
+      '<div class="card"><div class="row">' +
+      '<label class="f">Store (environment)<select id="rt-env"' + d + '>' + S.envs.map(function (e) { return opt(e, RT.env); }).join('') + '</select></label>' +
+      '<label class="f">Browser<select id="rt-browser"' + d + '>' + Object.keys(RT.browsers).map(function (b) { return opt(b, RT.browser, RT.browsers[b]); }).join('') + '</select></label>' +
+      '<label class="f">Add to the issue tracker<select id="rt-tracker"' + d + '>' + opt('0', RT.tracker, 'No (just look)') + opt('1', RT.tracker, 'Yes') + '</select></label>' +
+      '</div><p class="small muted" style="margin:10px 0 0">Each browser keeps its own saved Shopify login per store. A store or browser that was never logged in on the test machine is refused with the command to run once (<code>node src/cli.js login --env &lt;store&gt; [--browser msedge]</code>).</p></div>' +
+      '<div class="card"><div class="row" style="justify-content:space-between"><div class="row"><label class="f">Find a theme<input type="text" id="rt-filter" value="' + esc(RT.filter) + '" placeholder="type to filter" maxlength="40"></label><button id="rt-all"' + d + '>Select all shown</button><button id="rt-none"' + d + '>Clear</button></div><b id="rt-count">' + rtChosen().length + ' of ' + names.length + ' selected</b></div>' +
+      '<div id="rt-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 14px;max-height:340px;overflow:auto;margin-top:12px">' + rtListHtml() + '</div></div>' +
+      '<div class="card"><div class="row"><button class="primary" id="rt-run"' + d + '>Run test</button><span id="rt-msg" class="small muted">' + esc(RT.msg) + '</span></div><div id="rt-busy" style="margin-top:10px">' + rtBusyHtml() + '</div></div>' +
+      '<div class="card scroll"><h3>Requests</h3><div id="rt-reqs">' + rtReqsHtml() + '</div></div>';
+  }
+  function rtRefreshBits() { // update the parts of the page that change, never the whole page (typing must not lose focus)
+    var c = $('rt-count'); if (c) c.textContent = rtChosen().length + ' of ' + rtThemes().length + ' selected';
+    var b = $('rt-busy'); if (b) b.innerHTML = rtBusyHtml();
+    var r = $('rt-reqs'); if (r) r.innerHTML = rtReqsHtml();
+    var m = $('rt-msg'); if (m) { m.textContent = RT.msg; m.style.color = RT.bad ? 'var(--fail)' : 'var(--pass)'; }
+  }
+  function rtLoad() {
+    clearTimeout(rtT);
+    if (TAB !== 'runtest') return;
+    apiGet('/api/run-request').then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
+      RT.requests = j.requests || []; RT.busy = j.busy || []; if (j.browsers) RT.browsers = j.browsers;
+      if (TAB === 'runtest') rtRefreshBits();
+    }).catch(function () {}).then(function () {
+      var open = RT.requests.some(function (r) { return r.status === 'requested' || r.status === 'queued' || r.status === 'running'; });
+      rtT = setTimeout(rtLoad, open ? 5000 : 15000);
+    });
+  }
+  function bindRunTest() {
+    rtLoad();
+    $('rt-env').onchange = function (e) { RT.env = e.target.value; RT.msg = ''; render(); };
+    $('rt-browser').onchange = function (e) { RT.browser = e.target.value; };
+    $('rt-tracker').onchange = function (e) { RT.tracker = e.target.value; };
+    $('rt-filter').oninput = function (e) { RT.filter = e.target.value; $('rt-list').innerHTML = rtListHtml(); };
+    $('rt-all').onclick = function () { var f = RT.filter.trim().toLowerCase(); rtThemes().forEach(function (n) { if (!f || n.toLowerCase().indexOf(f) >= 0) RT.sel[n] = true; }); $('rt-list').innerHTML = rtListHtml(); rtRefreshBits(); };
+    $('rt-none').onclick = function () { RT.sel = {}; $('rt-list').innerHTML = rtListHtml(); rtRefreshBits(); };
+    $('rt-list').onchange = function (e) { var t = e.target; if (t && t.classList && t.classList.contains('rt-t')) { RT.sel[t.getAttribute('data-n')] = t.checked; rtRefreshBits(); } };
+    $('rt-reqs').onclick = function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('[data-cancel]') : null; if (!b) return;
+      b.disabled = true;
+      api('DELETE', '/api/run-request?id=' + encodeURIComponent(b.getAttribute('data-cancel'))).then(function () { RT.msg = 'Cancel sent.'; RT.bad = false; rtLoad(); }).catch(function (er) { RT.msg = er.message; RT.bad = true; rtRefreshBits(); b.disabled = false; });
+    };
+    $('rt-run').onclick = function () {
+      var themes = rtChosen();
+      if (!themes.length) { RT.msg = 'Choose at least one theme first.'; RT.bad = true; rtRefreshBits(); return; }
+      var busy = RT.busy.indexOf(RT.env) >= 0;
+      if (!confirm('Test ' + themes.length + ' theme(s) in the ' + RT.env + ' store with ' + (RT.browsers[RT.browser] || RT.browser) + '?' + (busy ? '\n\nA run is going on in this store: yours waits and starts when it ends.' : '\n\nIt starts now on the test machine and takes about 10-15 minutes per theme.'))) return;
+      $('rt-run').disabled = true; RT.msg = 'Sending...'; RT.bad = false; rtRefreshBits();
+      api('POST', '/api/run-request', { env: RT.env, browser: RT.browser, themes: themes, tracker: RT.tracker === '1' }).then(function () {
+        RT.msg = 'Sent. The test machine takes it within a few seconds; watch the state below.'; RT.bad = false; RT.sel = {};
+        $('rt-list').innerHTML = rtListHtml(); $('rt-run').disabled = false; rtRefreshBits(); rtLoad();
+      }).catch(function (er) { RT.msg = er.message; RT.bad = true; $('rt-run').disabled = false; rtRefreshBits(); });
+    };
   }
 
   /* ---- Themes ---- */
@@ -691,6 +794,8 @@ a.brand{color:inherit;text-decoration:none}
 
   document.addEventListener('click', function (e) {
     var lb = $('lightbox');
+    var sw = e.target && e.target.closest ? e.target.closest('[data-live-env]') : null;
+    if (sw) { SELENV = sw.getAttribute('data-live-env'); loadProgress(); return; }
     var tb = e.target && e.target.closest ? e.target.closest('[data-theme]') : null;
     if (tb) { openTheme(tb.getAttribute('data-theme'), tb.getAttribute('data-run')); return; }
     var gb = e.target && e.target.closest ? e.target.closest('[data-go]') : null;

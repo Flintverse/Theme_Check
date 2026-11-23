@@ -60,6 +60,7 @@ code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding
     <tr><td><b>Overview</b></td><td>The numbers of the latest run: how many fail, the worst themes, the most common problems.</td></tr>
     <tr><td><b>Issue tracker</b></td><td>Every problem seen so far: still <b>open</b> or <b>fixed</b>, and since when.</td></tr>
     <tr><td><b>Runs</b></td><td>Every past run. Open any theme of any run.</td></tr>
+    <tr><td><b>Run test</b></td><td>Pick some themes, a store and a browser, and test them now.</td></tr>
     <tr><td><b>Themes</b></td><td>The list of themes to test.</td></tr>
     <tr><td><b>Schedule</b></td><td>When the test runs by itself.</td></tr>
   </table>
@@ -121,7 +122,19 @@ code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding
 </section>
 
 <section>
-  <h2><span class="n">7</span>What the tool does to each theme</h2>
+  <h2><span class="n">7</span>Test a few themes yourself <small class="muted">(editors only)</small></h2>
+  <ol>
+    <li>Open <b>Run test</b>.</li>
+    <li>Pick the <b>store</b> and the <b>browser</b> (Chrome or Edge).</li>
+    <li>Tick the themes. Type in <b>Find a theme</b> to filter, <b>Select all shown</b> to tick the filtered ones, <b>Clear</b> to start over.</li>
+    <li>Press <b>Run test</b>. It starts on the test PC in its own browser. The <b>Requests</b> list below shows its state, and <b>Live</b> shows it theme by theme.</li>
+  </ol>
+  <p class="tip"><b>One run per store at a time.</b> A test for a store that is busy is <b>queued</b> and starts by itself when the run there ends: nothing running is ever stopped. Runs in <b>different stores</b> go on at the same time. You can <b>Cancel</b> a request that has not started.</p>
+  <p class="tip">A store and browser must have been logged in once on the test PC. If not, the request is <b>rejected</b> and tells you the command to run.</p>
+</section>
+
+<section>
+  <h2><span class="n">8</span>What the tool does to each theme</h2>
   <ol>
     <li><b>Install</b> the theme (one at a time) and <b>wait</b> until it shows in the theme list and its editor opens.</li>
     <li><b>Open the editor</b>: turn Findter on, choose the theme.</li>

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * node src/cli.js login  --env staging|prod            one-time Shopify admin login (saved in .profile-<env>/, no password stored)
- * node src/cli.js run    --env staging [--batches 1,2] [--themes "Dawn,Craft"] [--skip-clean] [--skip-wait] [--mail] [--dry-mail]
+ * node src/cli.js run    --env staging [--batches 1,2] [--themes "Dawn,Craft"] [--browser chrome|msedge] [--skip-clean] [--skip-wait] [--mail] [--dry-mail]
  *                                                     the weekly loop (docs/WORKFLOW.md): clean, install batch, test, report
  * node src/cli.js check  --url <storefront url> [--name dawn] [--layouts vertical,horizontal,offcanvas,mobile,search]
  *                                                     no admin: run the checklist on one storefront URL
@@ -69,12 +69,16 @@ async function doMail(cfg, runId, dry) {
     const envName = args.env || 'staging';
     const env = cfg.envs[envName];
     if (!env) throw new Error(`Unknown env ${envName}`);
-    await loginFlow(profileDirFor(ROOT, envName), env.adminHandle);
+    const br = args.browser ? String(args.browser) : 'chrome';
+    if (!['chrome', 'msedge'].includes(br)) throw new Error('--browser must be chrome or msedge');
+    await loginFlow(profileDirFor(ROOT, envName, br), env.adminHandle, br);
     return;
   }
 
   if (cmd === 'run') {
     const { runBatches } = require('./batch');
+    const browserName = args.browser ? String(args.browser) : 'chrome';
+    if (!['chrome', 'msedge'].includes(browserName)) throw new Error('--browser must be chrome or msedge');
     const monitor = require('./monitor').forRun(ROOT, cfg);
     const envName = args.env || 'staging';
     let list = require('./config').themesForEnv(loadThemes(), envName, cfg.batchSize || 15);
@@ -85,7 +89,7 @@ async function doMail(cfg, runId, dry) {
     }
     if (!list.length) throw new Error('No themes selected (check --batches / --themes against config/themes.json).');
     console.log(`Config: ${cfg._file} | env: ${envName} | themes: ${list.length}`);
-    const { run, runDir } = await runBatches({ root: ROOT, cfg, envName, themeList: list, checklist: loadChecklist(), opts: { skipClean: !!args['skip-clean'], skipWait: !!args['skip-wait'], keepThemes: !!args['keep-themes'], label: args.label ? String(args.label) : '', keepPictures: !!args['keep-pictures'], noTracker: !!args['no-tracker'], show: !!args.show, headless: !!args.headless, onProgress: monitor.onProgress, onFinish: monitor.onFinish } });
+    const { run, runDir } = await runBatches({ root: ROOT, cfg, envName, themeList: list, checklist: loadChecklist(), opts: { skipClean: !!args['skip-clean'], skipWait: !!args['skip-wait'], keepThemes: !!args['keep-themes'], label: args.label ? String(args.label) : '', keepPictures: !!args['keep-pictures'], noTracker: !!args['no-tracker'], browser: browserName, show: !!args.show, headless: !!args.headless, onProgress: monitor.onProgress, onFinish: monitor.onFinish } });
     console.log(`\nReport: ${path.join(runDir, 'report.html')}`);
     if (args.mail || args['dry-mail']) await doMail(cfg, run.runId, !!args['dry-mail']);
     return;
@@ -150,6 +154,17 @@ async function doMail(cfg, runId, dry) {
     const rr = await require('./monitor').removeRunsRemote(ROOT, cfg, ids, { clearProgress: r.progressCleared });
     console.log(rr.message);
     process.exitCode = rr.ok ? 0 : 1;
+    return;
+  }
+
+  if (cmd === 'queue') { // node src/cli.js queue --env prod --themes "Dawn,Craft" [--browser msedge]   |   node src/cli.js queue --list
+    const q = require('./run-queue');
+    if (args.list) { q.reconcile(ROOT, cfg); q.list(ROOT).forEach((r) => console.log(`${r.id}  ${r.status.padEnd(9)} ${r.env}/${r.browser}  ${r.themes.length} theme(s)  ${r.note || ''}`)); return; }
+    const r = q.add(ROOT, cfg, { env: args.env || 'staging', browser: args.browser, themes: String(args.themes || '').split(','), tracker: !!args.tracker }, 'the command line');
+    if (!r.ok) throw new Error(r.error);
+    const started = q.startDue(ROOT, cfg);
+    const now = q.get(ROOT, r.request.id);
+    console.log(`Request ${now.id}: ${now.status}${now.note ? ' (' + now.note + ')' : ''}`);
     return;
   }
 

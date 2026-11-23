@@ -23,14 +23,23 @@ class Pass {
     this.results = [];
     this.n = 0;
   }
+  // Saves a picture and returns its path, or null when it could not be saved. A screenshot can time out on a page that is still
+  // loading fonts or running animations (the pass's short default wait of 8 s was too short for some themes), so it is tried up to
+  // three times, the later ones with animations switched off. A picture that could not be saved is never listed: the page would
+  // show a broken image with only its file name.
   async shot(name, opts) {
     const rel = `${this.relDir}/${String(++this.n).padStart(2, '0')}-${name}.png`;
     const file = path.join(this.outDir, rel);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    await this.page.screenshot(Object.assign({ path: file }, opts || {})).catch(() => {});
-    return rel;
+    const tries = [{ timeout: 15000 }, { timeout: 15000, animations: 'disabled', caret: 'initial' }, { timeout: 15000, animations: 'disabled', caret: 'initial' }];
+    for (const t of tries) {
+      try { await this.page.screenshot(Object.assign({ path: file }, t, opts || {})); if (fs.existsSync(file)) return rel; } catch (e) { this.lastShotError = String(e.message).split('\n')[0].slice(0, 120); }
+      await this.page.waitForTimeout(500).catch(() => {});
+    }
+    this.shotsLost = (this.shotsLost || 0) + 1;
+    return null;
   }
-  add(id, status, detail, shots) { this.results.push({ id, layout: this.layout, status, detail: detail || '', shots: shots || [], sec: Math.round((Date.now() - (this.t0 || Date.now())) / 100) / 10 }); } // sec = seconds since the pass started, to see where the time goes
+  add(id, status, detail, shots) { this.results.push({ id, layout: this.layout, status, detail: detail || '', shots: (shots || []).filter(Boolean), sec: Math.round((Date.now() - (this.t0 || Date.now())) / 100) / 10 }); } // sec = seconds since the pass started, to see where the time goes
   async m(id, shotName, alias, scope) {
     let r;
     try { r = await this.page.evaluate(measure, { id: alias || id, opts: this.T, scope }); } catch (e) { r = { status: 'error', detail: String(e.message).slice(0, 160) }; }
@@ -372,10 +381,23 @@ async function detectLayout(page) {
   });
 }
 
+// The storefront takes a few seconds to show a layout that was just saved. So a layout that is not yet the expected one is looked at
+// again (the page reloaded) a few times before it counts as "not applied": a check that starts too early must not fail the theme.
+async function settleLayout(page, expected, o) {
+  const opt = Object.assign({ tries: 4, waitMs: 4000, url: null, password: undefined }, o);
+  let actual = await detectLayout(page);
+  for (let i = 0; i < opt.tries && actual !== expected; i++) {
+    await page.waitForTimeout(opt.waitMs);
+    await load(page, opt.url || page.url(), opt.password).catch(() => {});
+    actual = await detectLayout(page);
+  }
+  return actual;
+}
+
 async function pageChecks(p, c) {
   const expected = p.viewport === 'mobile' ? 'offcanvas' : p.layout === 'search' ? null : p.layout;
   if (expected) {
-    const actual = await detectLayout(p.page);
+    const actual = await settleLayout(p.page, expected, { url: p.baseUrl, password: p.password });
     p.add('G-04', actual === expected ? 'pass' : 'fail', actual === expected ? '' : `expected the ${expected} layout but the page shows: ${actual}. Check Tab 1 (Filter layout saved?) and reload.`);
   }
   await p.m('G-01', 'page');
@@ -569,4 +591,4 @@ async function waitFindter({ browser, url, cookies, password, maxMs, selectorMs,
   } finally { await ctx.close().catch(() => {}); }
 }
 
-module.exports = { runPass, load, collectors, changedRatio, detectLayout, dotsOnLine, waitFindter };
+module.exports = { Pass, runPass, load, collectors, changedRatio, detectLayout, settleLayout, dotsOnLine, waitFindter };

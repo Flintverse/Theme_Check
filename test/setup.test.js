@@ -10,6 +10,46 @@ function server(handler) {
   return new Promise((ok) => srv.listen(0, '127.0.0.1', () => ok(srv)));
 }
 
+test('pictures: a screenshot that fails is tried again; one that cannot be saved is not listed (no broken image with only a file name)', async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { Pass } = require('../src/checks/run');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-shot-'));
+  let calls = 0;
+  const slowPage = { screenshot: async (o) => { calls++; if (calls < 3) throw new Error('page.screenshot: Timeout 8000ms exceeded'); fs.writeFileSync(o.path, 'png'); }, waitForTimeout: async () => {} };
+  const p = new Pass({ page: slowPage, outDir: dir, relDir: 'craft/search-desktop', layout: 'search', viewport: {}, thresholds: {} });
+  const rel = await p.shot('search-typed');
+  assert.strictEqual(rel, 'craft/search-desktop/01-search-typed.png');
+  assert.ok(fs.existsSync(path.join(dir, rel)), 'saved on the third try');
+  assert.strictEqual(calls, 3);
+  const deadPage = { screenshot: async () => { throw new Error('Target closed'); }, waitForTimeout: async () => {} };
+  const q = new Pass({ page: deadPage, outDir: dir, relDir: 'craft/other', layout: 'search', viewport: {}, thresholds: {} });
+  const none = await q.shot('x');
+  assert.strictEqual(none, null);
+  assert.strictEqual(q.shotsLost, 1);
+  q.add('S-05', 'review', 'look', [none, rel]);
+  assert.deepStrictEqual(q.results[0].shots, [rel], 'only a picture that exists is listed');
+});
+
+test('settleLayout: a layout that was saved a moment ago is waited for (page reloaded) before it counts as not applied', async () => {
+  const { settleLayout } = require('../src/checks/run');
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  let loads = 0;
+  const srv = await server((req, res) => { if (/favicon/.test(req.url)) { res.writeHead(404); return res.end(); } loads++; res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(`<!doctype html><body><div id="fdt-container"><div class="search-filters__layout fdt-layout-${loads >= 3 ? 'horizontal' : 'vertical'}">x</div></div><div class="search-filters__product-item">card</div>`); });
+  const url = `http://127.0.0.1:${srv.address().port}/collections/all`;
+  try {
+    const page = await browser.newPage();
+    await page.goto(url);
+    assert.strictEqual(await settleLayout(page, 'horizontal', { url, waitMs: 50 }), 'horizontal', 'the storefront showed vertical for two loads, then the saved horizontal');
+    assert.strictEqual(loads, 3);
+    loads = 0;
+    // (a browser may also ask for /favicon.ico: that is not a page load)
+    await page.goto(url);
+    assert.strictEqual(await settleLayout(page, 'offcanvas', { url, waitMs: 50, tries: 2 }), 'horizontal', 'a layout that never arrives is still reported as what the page shows (so G-04 fails)');
+  } finally { srv.close(); await browser.close(); }
+});
+
 test('waitFindter: a theme that does not draw Findter on /collections/all is tried on a real collection from the menu', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   const srv = await server((req, res) => {

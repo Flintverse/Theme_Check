@@ -868,6 +868,12 @@ a.brand{color:inherit;text-decoration:none}
     if (!k) return;
     setVerdict(k, t.checked ? t.getAttribute('data-v') : null, t.getAttribute('data-orig'));
   });
+  // A picture that cannot be loaded (an old run whose screenshot failed, or one not uploaded yet) is replaced by a plain sentence,
+  // not a broken image with only a file name.
+  document.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t.tagName === 'IMG' && t.getAttribute('data-zoom') && t.parentNode) { var s = document.createElement('span'); s.className = 'muted small'; s.textContent = 'Picture not available'; t.parentNode.replaceChild(s, t); }
+  }, true);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { if ($('lightbox').style.display === 'flex') $('lightbox').style.display = 'none'; else if (DET.name) closeTheme(); } });
   window.addEventListener('resize', function () { crumbs(); });
   window.addEventListener('hashchange', function () {

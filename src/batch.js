@@ -274,6 +274,9 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
   try {
     prog.setPhase('login', 'Opening the Findter design page (Tab 1)');
     designPage = await design.openDesign(ctx, env);
+    designPage.shotDir = dbg; // a picture of the design page is kept when a layout cannot be saved
+    const planNotice = await design.readNotice(designPage.frame);
+    if (planNotice) { log(`WARNING: the Findter design page shows a plan notice: ${planNotice}. Results may differ from a store on a paid plan.`); prog.event('Plan notice on the design page: ' + planNotice); }
     layoutState.cur = await design.readLayout(designPage.frame).catch(() => null);
     liveInfo =await themesApi.liveTheme(ctx, env);
     log(`Live theme at the start: ${liveInfo ? liveInfo.name : '(none found)'}. It is never deleted.`);
@@ -312,12 +315,19 @@ async function runBatches({ root, cfg, envName: envKey, themeList, checklist, op
         log(`  ${t.name}: not usable (${usable.reason}: ${usable.detail})`);
         saveRun(runDir, run, checklist, prev);
       }
+      const lastTwo = run.themes.slice(-2);
+      const stuck = lastTwo.length === 2 && lastTwo.every((x) => x.setupFailed && /no Save button/.test(x.setupFailed.detail || ''));
       if (!opts.keepThemes) { // uninstall it before the next theme is installed
         prog.setPhase('cleaning', `Deleting ${t.name} from the store`);
         const d = await themesApi.deleteTheme(ctx, env, id, dbg);
         log(`  ${t.name}: ${d.ok ? 'deleted from the store' : 'could NOT be deleted (' + d.reason + '), the end-of-run clean-up will try again'}`);
         prog.setTheme(t.name, { step: (d.ok ? 'Tested and deleted from the store' : 'Tested, but could not be deleted') });
         await sleep(delays.afterClean);
+      }
+      if (stuck) { // the same setup failure twice in a row is the store or the app, not the themes: stop instead of failing every theme
+        const why = 'Stopped after 2 themes in a row could not switch the layout (no Save button on the Findter design page). Check the store/app (plan notice, login), then run the remaining themes again.';
+        log(why); prog.event(why); outcome = 'failed';
+        break;
       }
     }
   } catch (e) {

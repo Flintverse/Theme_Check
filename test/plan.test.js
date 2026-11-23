@@ -81,7 +81,7 @@ test('one theme at a time: install, wait until usable, test, delete, next (the o
     getPreviewUrl: async () => ({ url: 'https://x', cookies: [], via: 'fake' }), exitEditor: async () => {},
   };
   const layoutCalls = [];
-  const fakeDesign = { openDesign: async () => ({ frame: {} }), readLayout: async () => 'vertical', setLayout: async (d, l) => { layoutCalls.push(l); } };
+  const fakeDesign = { openDesign: async () => ({ frame: {} }), readNotice: async () => '', readLayout: async () => 'vertical', setLayout: async (d, l) => { layoutCalls.push(l); } };
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-flow-'));
   ['checklist'].forEach((d) => fs.cpSync(path.join(__dirname, '..', d), path.join(root, d), { recursive: true }));
   const real = Module._load;

@@ -1,7 +1,7 @@
 // Run-sheet report: header facts, totals, shared issues, theme x check matrix, then one card per checklist item (failures first).
 const { flatten, compare, groupIssues, totals, FAIL } = require('./compare');
 
-const { REPORT_SCRIPT } = require('../../cf/report-script.js'); // one source: the page and the Cloudflare CSP hash use the same text
+const REPORT_SCRIPT = require('../../cf/report-script.js').REPORT_SCRIPT.replace(/\r\n/g, '\n'); // one source: the page and the Cloudflare CSP hash use the same text (line ends the same on every machine)
 const VERDICTS = ['pass', 'fail', 'skip', 'review'];
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 

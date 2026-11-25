@@ -132,7 +132,7 @@ import { REPORT_SCRIPT } from './report-script.js';
 let cspCache = null;
 export async function reportCsp() {
   if (cspCache) return cspCache;
-  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(REPORT_SCRIPT));
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(REPORT_SCRIPT.replace(/\r\n/g, '\n')));
   const b64 = btoa(String.fromCharCode(...new Uint8Array(d)));
   cspCache = `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'sha256-${b64}'; connect-src 'self'; base-uri 'none'; form-action 'none'`;
   return cspCache;

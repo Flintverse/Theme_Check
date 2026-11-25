@@ -363,7 +363,7 @@ test('report page: every check row has Pass / Fail / Skip / Review boxes with th
 test('report page: the web copy lists the hash of the verdict script, so only that script runs', async () => {
   const crypto = require('crypto');
   const lib = await imp('cf/lib.js');
-  const { REPORT_SCRIPT } = await imp('cf/report-script.js');
+  const REPORT_SCRIPT = (await imp('cf/report-script.js')).REPORT_SCRIPT.replace(/\r\n/g, '\n'); // a Windows checkout may have CRLF: both sides normalize
   const csp = await lib.reportCsp();
   assert.ok(csp.includes("script-src 'sha256-" + crypto.createHash('sha256').update(REPORT_SCRIPT).digest('base64') + "'"));
   assert.ok(csp.includes("connect-src 'self'") && csp.includes("default-src 'none'"));

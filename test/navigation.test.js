@@ -121,7 +121,7 @@ test('full report: links to every page of the tool and a way back; the dashboard
   assert.match(html, /<nav class="tcnav"/);
   TABS.forEach((t) => assert.ok(html.includes(`href="../../#${t}"`), t));
   assert.match(html, /&larr; Back to the dashboard/);
-  assert.ok(!/<script/i.test(html));
+  assert.strictEqual((html.match(/<script/gi) || []).length, 1, 'only the verdict script is in the page');
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-nav-'));
   ['config', 'checklist', 'ui'].forEach((d) => fs.cpSync(path.join(SRC, d), path.join(root, d), { recursive: true }));

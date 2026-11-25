@@ -48,7 +48,7 @@ test('report page: manual badge, and a picture pop-up with an X that needs no sc
   assert.match(plain, /class="lb" id="pic\d+"/);
   assert.match(plain, /class="x" href="#closed"/);
   assert.match(plain, /\.lb:target\{display:flex\}/);
-  assert.ok(!/<script/i.test(plain), 'the report may not need scripts (its Content-Security-Policy forbids them)');
+  assert.strictEqual((plain.match(/<script/gi) || []).length, 1, 'only the verdict script (allowed by its hash in the Content-Security-Policy) is in the page');
 });
 
 test('local dashboard: a verdict recalculates the report, the numbers, the run index and the issue tracker', async () => {
@@ -348,4 +348,69 @@ test('reports are drawn with the picture X by the current code: same input = sam
     assert.match(up.body, /class="x" href="#closed"/);
     assert.strictEqual(await monitor.pushFreshReport(s, root, cfg, '2026-11-18-staging', seen, fetchImpl), false, 'unchanged: not uploaded again');
   } finally { if (old === undefined) delete process.env.THEME_CHECK_TOKEN; else process.env.THEME_CHECK_TOKEN = old; }
+});
+
+test('report page: every check row has Pass / Fail / Skip / Review boxes with the dashboard key, the manual one ticked', () => {
+  const r = run('r', '2026-11-18', { Dawn: [['V-10', 'fail', 'x'], ['V-11', 'pass', 'y']] });
+  const html = render(ovr.applyOverrides(r, { items: { 'Dawn|vertical|desktop|V-10': { status: 'skip', by: 'Dung' } } }), checklist, null);
+  assert.match(html, /<body data-run="r"/);
+  for (const v of ['pass', 'fail', 'skip', 'review']) assert.ok(html.includes('data-vk="Dawn|vertical|desktop|V-10" data-v="' + v + '" data-orig="fail"'), v);
+  assert.ok(html.includes('data-v="skip" data-orig="fail" checked'), 'the manual verdict is ticked');
+  assert.ok(!html.includes('data-vk="Dawn|vertical|desktop|V-11" data-v="pass" data-orig="pass" checked'));
+  assert.ok(html.includes('<th>Your verdict</th>'));
+});
+
+test('report page: the web copy lists the hash of the verdict script, so only that script runs', async () => {
+  const crypto = require('crypto');
+  const lib = await imp('cf/lib.js');
+  const { REPORT_SCRIPT } = await imp('cf/report-script.js');
+  const csp = await lib.reportCsp();
+  assert.ok(csp.includes("script-src 'sha256-" + crypto.createHash('sha256').update(REPORT_SCRIPT).digest('base64') + "'"));
+  assert.ok(csp.includes("connect-src 'self'") && csp.includes("default-src 'none'"));
+  const page = render(run('r', '2026-11-18', { Dawn: [['V-10', 'fail', 'x']] }), checklist, null);
+  assert.ok(page.includes('<script>' + REPORT_SCRIPT + '</script>'), 'the page carries exactly the text that was hashed');
+});
+
+test('report page: in a browser, an editor ticks a verdict, it is saved with PUT /api/overrides, and a refusal puts the box back', async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  try {
+    const html = render(run('r', '2026-11-18', { Dawn: [['V-10', 'fail', 'x']] }), checklist, null);
+    for (const mode of ['editor', 'viewer', 'refused']) {
+      const page = await browser.newPage();
+      const errors = []; const puts = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.route('http://tc.test/**', async (route) => {
+        const req = route.request(), u = new URL(req.url());
+        const j = (code, body) => route.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify(body) });
+        if (u.pathname === '/api/me') return mode === 'viewer' ? j(200, { email: 'a@b.c', canEdit: false }) : j(200, { email: 'a@b.c', canEdit: true });
+        if (u.pathname === '/api/overrides') { puts.push(JSON.parse(req.postData())); return mode === 'refused' ? j(403, { error: 'Only the editors can change a result.' }) : j(200, { ok: true, rev: 1, items: {} }); }
+        return route.fulfill({ status: 200, contentType: 'text/html', body: html });
+      });
+      await page.goto('http://tc.test/runs/r/report.html');
+      const box = page.locator('input[data-v="pass"]').first();
+      if (mode === 'viewer') {
+        await page.waitForFunction(() => /only the editors/.test(document.getElementById('vhint').textContent));
+        assert.ok(await box.isDisabled());
+      } else {
+        await page.waitForFunction(() => !document.querySelector('input[data-vk]').disabled);
+        await box.check();
+        await page.waitForFunction(() => /Saved|Could not save/.test(document.getElementById('vmsg').textContent));
+        assert.strictEqual(puts.length, 1);
+        assert.deepStrictEqual(puts[0], { run: 'r', key: 'Dawn|vertical|desktop|V-10', status: 'pass', orig: 'fail' });
+        if (mode === 'editor') {
+          assert.match(await page.textContent('td.rcell'), /PASS/);
+          assert.match(await page.textContent('td.rcell'), /MANUAL PASS \(script: fail\)/);
+          await page.locator('input[data-v="pass"]').first().uncheck();
+          await page.waitForFunction(() => /back to what the script found/.test(document.getElementById('vmsg').textContent));
+          assert.deepStrictEqual(puts[1], { run: 'r', key: 'Dawn|vertical|desktop|V-10', status: null, orig: 'fail' });
+          assert.match(await page.textContent('td.rcell'), /FAIL/);
+        } else {
+          assert.match(await page.textContent('#vmsg'), /Could not save: Only the editors/);
+          assert.ok(!(await box.isChecked()), 'the box went back');
+        }
+      }
+      assert.deepStrictEqual(errors, []);
+      await page.close();
+    }
+  } finally { await browser.close(); }
 });

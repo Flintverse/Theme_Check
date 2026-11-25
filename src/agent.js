@@ -114,11 +114,12 @@ async function upgradeReports(root, cfg, opts) {
   const going = new Set(); // every run that is still going (one per store)
   try { require('./store/progress').readAllProgress(dataDir(root, cfg)).forEach((p) => { if (p && p.running) going.add(p.runId); }); } catch (e) { /* none */ }
   let upgraded = 0;
-  const ids = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((d) => fs.existsSync(path.join(dir, d, 'results.json'))).sort().slice(-3);
+  const ids = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((d) => fs.existsSync(path.join(dir, d, 'results.json'))).sort().reverse(); // newest first: every run gets the verdict boxes, three per round
   for (const runId of ids) {
+    if (upgraded >= 3) break;
     if (going.has(runId)) continue;
     const rep = path.join(dir, runId, 'report.html');
-    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('tc-report-v4')) continue;
+    if (!fs.existsSync(rep) || fs.readFileSync(rep, 'utf8').includes('tc-report-v5')) continue;
     o.refresh({ root, cfg, runId, checklist: cfgLib.loadChecklist(root) });
     const pages = fs.readdirSync(path.join(dir, runId)).filter((n) => /^report.*.html$/.test(n)).map((n) => path.join(dir, runId, n));
     await sync.pushRunFiles(monitor, path.join(dir, runId), runId, { files: pages, fetchImpl: o.fetchImpl });

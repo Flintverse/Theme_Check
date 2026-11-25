@@ -126,8 +126,17 @@ export function cleanKey(parts) {
 
 export const EMPTY_STATE = { readOnly: true, mediaLocal: true, envs: [], themes: [], schedule: {}, task: null, runs: [], issues: { items: {} }, themeStatus: [], checklist: [], library: {} };
 
-// A report is plain HTML with no scripts: lock it down so it can never run code.
-export const REPORT_CSP = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+// A report may run ONE script: the verdict boxes (cf/report-script.js). Its SHA-256 is listed, so nothing else can run in the page,
+// and it may only talk to this site (PUT /api/overrides).
+import { REPORT_SCRIPT } from './report-script.js';
+let cspCache = null;
+export async function reportCsp() {
+  if (cspCache) return cspCache;
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(REPORT_SCRIPT));
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(d)));
+  cspCache = `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'sha256-${b64}'; connect-src 'self'; base-uri 'none'; form-action 'none'`;
+  return cspCache;
+}
 
 // ---------- who may CHANGE the schedule and the theme lists (everyone signed in may only look) ----------
 export const editorEmails = (env) => String(env.EDITORS || '').toLowerCase().split(/[\s,;]+/).filter((e) => e.includes('@'));

@@ -1,6 +1,8 @@
 // Run-sheet report: header facts, totals, shared issues, theme x check matrix, then one card per checklist item (failures first).
 const { flatten, compare, groupIssues, totals, FAIL } = require('./compare');
 
+const { REPORT_SCRIPT } = require('../../cf/report-script.js'); // one source: the page and the Cloudflare CSP hash use the same text
+const VERDICTS = ['pass', 'fail', 'skip', 'review'];
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const CSS = `
@@ -58,6 +60,10 @@ figcaption{font:12px ui-monospace,monospace;color:var(--muted)}
 .tcnav .back{border:1px solid var(--line);color:var(--ink)}
 .tcnav .here{margin-left:auto;font:12px ui-monospace,monospace;color:var(--muted)}
 .man{font:700 10px ui-monospace,monospace;padding:2px 6px;border-radius:4px;margin-left:6px;background:var(--accent);color:#fff;white-space:nowrap}
+.vgrid{display:grid;grid-template-columns:repeat(2,auto);gap:2px 10px;font-size:12px;white-space:nowrap}
+.vb{display:flex;align-items:center;gap:4px;cursor:pointer}
+.vb input:disabled{cursor:not-allowed}
+.vmsg{position:sticky;top:48px;z-index:30}.vmsg.ok{border-color:var(--pass);color:var(--pass)}.vmsg.bad{border-color:var(--fail);color:var(--fail)}
 .lb{display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.88);align-items:center;justify-content:center;padding:56px 16px 16px}
 .lb:target{display:flex}
 .lb img{max-width:100%;max-height:100%;border-radius:8px;background:#fff}
@@ -119,23 +125,27 @@ function render(run, checklist, prevRun, opts) {
       }).join('');
       const ev = shots ? `<div class="shots">${shots}</div>` : '';
       const man = r.manual ? `<span class="man" title="Set by hand. The script said: ${esc(r.autoStatus)}">MANUAL ${esc(String(r.manual).toUpperCase())} (script: ${esc(r.autoStatus)})</span>` : '';
-      return `<tr><td><a href="${themeReportFile(r.theme)}">${esc(r.theme)}</a></td><td>${esc(r.layout)}</td><td>${pill(r.status)}${chg(r.change)}${man}</td><td>${esc(r.detail)}${ev}</td></tr>`;
+      // the verdict boxes: the key is the same one the dashboard uses (theme|layout|viewport|check), the script's own result is "orig"
+      const orig = String(r.autoStatus || r.status) === 'error' ? 'fail' : String(r.autoStatus || r.status);
+      const key = [r.theme, r.layout, r.viewport, r.id].join('|');
+      const boxes = r.id === 'SETUP' ? '<span class="refs">-</span>' : `<div class="vgrid" data-cur="${esc(r.manual || '')}">${VERDICTS.map((v) => `<label class="vb"><input type="checkbox" data-vk="${esc(key)}" data-v="${v}" data-orig="${esc(orig)}"${r.manual === v ? ' checked' : ''} disabled> ${v[0].toUpperCase() + v.slice(1)}</label>`).join('')}</div>`;
+      return `<tr><td><a href="${themeReportFile(r.theme)}">${esc(r.theme)}</a></td><td>${esc(r.layout)}</td><td class="rcell">${pill(r.status)}${chg(r.change)}${man}</td><td>${esc(r.detail)}${ev}</td><td>${boxes}</td></tr>`;
     }).join('');
     return `<section class="card r-${status}" id="${esc(id)}"><div class="h"><span class="cid">${esc(id)}</span>${pill(status)}<span class="refs">${esc(m.area || '')} | ${esc(m.severity)} | ${esc(m.mode || '')}</span></div><h3>${esc(m.title)}</h3>
 <dl class="cols"><div><dt>Steps</dt><dd>${esc(m.steps)}</dd></div><div><dt>Expected</dt><dd>${esc(m.expected)}</dd></div></dl>
-<div class="scroll"><table><tr><th>Theme</th><th>Layout</th><th>Result</th><th>Actual</th></tr>${lines}</table></div></section>`;
+<div class="scroll"><table><tr><th>Theme</th><th>Layout</th><th>Result</th><th>Actual</th><th>Your verdict</th></tr>${lines}</table></div></section>`;
   }).join('\n');
 
   const fixedHtml = fixed.length ? `<div class="note"><b>Fixed since the previous run (${fixed.length})</b><ul>${fixed.map((r) => `<li>${esc(r.theme)} / ${esc(r.layout)} / ${esc(r.id)}${chg('FIXED')}</li>`).join('')}</ul></div>` : '';
 
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${only ? esc(only) + ' - ' : ''}Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body><!-- tc-report-v4 -->${NAV(run, only)}<div class="wrap">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${only ? esc(only) + ' - ' : ''}Theme check ${esc(run.runId)}</title><style>${CSS}</style></head><body data-run="${esc(run.runId)}"><!-- tc-report-v5 -->${NAV(run, only)}<div class="wrap">
 <div><div class="eyebrow">Theme check | Findter</div><h1>${only ? esc(only) + ': theme report' : 'Theme compatibility run ' + esc(run.runId)}</h1></div>
 <dl class="facts"><div><dt>Environment</dt><dd>${esc(run.env)} (${esc(run.shop || '')})</dd></div><div><dt>Run</dt><dd>${esc(require('../lib/time').fmtStamp(run.startedAt))}</dd></div><div><dt>Themes</dt><dd>${themes.length}</dd></div><div><dt>Checklist</dt><dd>${checklist.items.length} items, v${esc(checklist.version)}</dd></div><div><dt>Compared with</dt><dd>${prevRun ? esc(prevRun.runId) : 'no earlier run'}</dd></div></dl>
 <div class="totals"><div class="t t-pass"><b>${t.pass}</b>PASS</div><div class="t t-fail"><b>${t.fail + (t.error || 0)}</b>FAIL</div><div class="t t-review"><b>${t.review}</b>REVIEW</div><div class="t t-na"><b>${t.na}</b>N/A</div></div>
 <h2 class="sec">Found</h2>${sharedHtml}${fixedHtml}
 <h2 class="sec">Theme x checklist</h2>${matrix}
-<h2 class="sec">Checklist items, failures first</h2>${cards}
-</div></body></html>`;
+<h2 class="sec">Checklist items, failures first</h2><p class="refs" id="vhint">Your verdict on a row needs the page to run its script (open the report from the dashboard).</p><div class="note vmsg" id="vmsg" hidden></div>${cards}
+</div><script>${REPORT_SCRIPT}</script></body></html>`;
 }
 
 // File name of one theme's report inside the run folder (same slug as the picture folders).
